@@ -1,0 +1,158 @@
+//! Aggregation grouping clause parsing for PromQL
+//!
+//! This module handles parsing the grouping clauses used with aggregation operators:
+//! - `by (label1, label2)` - Group by specific labels
+//! - `without (label1, label2)` - Group without specific labels
+
+use std::fmt;
+
+use nom::{
+    IResult, Parser, branch::alt, bytes::complete::tag_no_case, character::complete::char,
+    multi::separated_list0,
+};
+
+use crate::lexer::{identifier::label_name, whitespace::ws_opt};
+
+/// Grouping action for aggregation expressions
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupingAction {
+    /// Group by specific labels, dropping all others
+    By,
+    /// Drop specific labels, keeping all others
+    Without,
+}
+
+impl fmt::Display for GroupingAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GroupingAction::By => write!(f, "by"),
+            GroupingAction::Without => write!(f, "without"),
+        }
+    }
+}
+
+/// Grouping clause for aggregation expressions
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Grouping {
+    /// The grouping action (by or without)
+    pub action: GroupingAction,
+    /// The label names to group by/without
+    pub labels: Vec<String>,
+}
+
+impl fmt::Display for Grouping {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (", self.action)?;
+        for (i, label) in self.labels.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", label)?;
+        }
+        write!(f, ")")
+    }
+}
+
+/// Parse a grouping clause: `by (label1, label2)` or `without (label1, label2)`
+///
+/// # Examples
+///
+/// ```
+/// use rusty_promql_parser::parser::aggregation::{grouping, GroupingAction};
+///
+/// let (rest, g) = grouping("by (job, instance)").unwrap();
+/// assert!(rest.is_empty());
+/// assert_eq!(g.action, GroupingAction::By);
+/// assert_eq!(g.labels, vec!["job", "instance"]);
+///
+/// let (rest, g) = grouping("without (job)").unwrap();
+/// assert!(rest.is_empty());
+/// assert_eq!(g.action, GroupingAction::Without);
+/// ```
+pub fn grouping(input: &str) -> IResult<&str, Grouping> {
+    // Parse the action (by or without)
+    let (rest, action) = alt((
+        tag_no_case("by").map(|_| GroupingAction::By),
+        tag_no_case("without").map(|_| GroupingAction::Without),
+    ))
+    .parse(input)?;
+
+    // Parse whitespace and opening paren
+    let (rest, _) = ws_opt(rest)?;
+    let (rest, _) = char('(')(rest)?;
+    let (rest, _) = ws_opt(rest)?;
+
+    // Parse label list
+    let (rest, labels) = separated_list0(
+        (ws_opt, char(','), ws_opt),
+        label_name.map(|s| s.to_string()),
+    )
+    .parse(rest)?;
+
+    // Parse closing paren
+    let (rest, _) = ws_opt(rest)?;
+    let (rest, _) = char(')')(rest)?;
+
+    Ok((rest, Grouping { action, labels }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_grouping_by() {
+        let (rest, g) = grouping("by (job)").unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(g.action, GroupingAction::By);
+        assert_eq!(g.labels, vec!["job"]);
+    }
+
+    #[test]
+    fn test_grouping_without() {
+        let (rest, g) = grouping("without (instance)").unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(g.action, GroupingAction::Without);
+        assert_eq!(g.labels, vec!["instance"]);
+    }
+
+    #[test]
+    fn test_grouping_multiple_labels() {
+        let (rest, g) = grouping("by (job, instance, method)").unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(g.labels, vec!["job", "instance", "method"]);
+    }
+
+    #[test]
+    fn test_grouping_empty() {
+        let (rest, g) = grouping("by ()").unwrap();
+        assert!(rest.is_empty());
+        assert!(g.labels.is_empty());
+    }
+
+    #[test]
+    fn test_grouping_case_insensitive() {
+        let (rest, g) = grouping("BY (job)").unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(g.action, GroupingAction::By);
+
+        let (rest, g) = grouping("WITHOUT (job)").unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(g.action, GroupingAction::Without);
+    }
+
+    #[test]
+    fn test_grouping_display() {
+        let g = Grouping {
+            action: GroupingAction::By,
+            labels: vec!["job".to_string(), "instance".to_string()],
+        };
+        assert_eq!(format!("{}", g), "by (job, instance)");
+
+        let g = Grouping {
+            action: GroupingAction::Without,
+            labels: vec!["job".to_string()],
+        };
+        assert_eq!(format!("{}", g), "without (job)");
+    }
+}

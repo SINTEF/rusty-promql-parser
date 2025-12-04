@@ -1,0 +1,216 @@
+-http_requests_total{method="GET"}
+-some_metric{job="foo"}
+'}'
+'a\\dos\\path'
+'bar'
+'boo\\urns'
+'foo\'bar'
+"
+""
+"\
+"\\"
+"\000"
+"\101"
+"\377"
+"\a"
+"\a\b\f\n\r\t\v\\\"
+"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"
+"\b"
+"\c"
+"\f"
+"\n"
+"\q"
+"\r"
+"\t"
+"\U00010111"
+"\u0041"
+"\u1234"
+"\u4e2d\u6587"
+"\uXXXX"
+"\v"
+"\x."
+"\x00"
+"\x07\x08\x0c\n\r\t\x0b\\\"
+"\x41"
+"\x41""\x41\x42\x43"
+"\xFF"
+"\xZZ"
+"bar"
+"bar\"bar"
+"double-quoted string \" with escaped quote"
+"hello
+"hello world"
+"hello"
+"hello" world
+"hello"[5m]
+"hello\'world"
+"hello\"world"
+"hello\\world"
+"hello\nworld"
+"hello\tworld"
+"say \"hello\""
+"string"[5m:1m]
+"string"[5m]
+"test string"
+"test string"
+"test\\.expression"
+"test\tsequence"
+"world"
+(node_filesystem_avail_bytes / node_filesystem_size_bytes) <
+(node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes *
+(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes *
+(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes >
+["5m"]
+{__name__="a"}
+{__name__="bar", __name__="baz"}
+{__name__=~"bar", __name__!~"baz"}
+{"bar", __name__="baz"}
+{"foo", a="bc"}
+{"foo", bar="baz"}
+{"foo"}
+{}("label", metric)
+{}("label", some_metric)
+{a="b", foo!="bar", "foo", test=~"test", bar!~"baz"}
+{foo='bar'}
+{job="prometheus"}
+{job="prometheus"}[5m]
+{x!="a"}
+{x!~".+"}
+{x=""}
+{x=~".*"}
+`'hello'`
+`"hello"`
+`\a\b\f\n\r\t\v\\\"\'`
+`hello 'world'`
+`hello "world"`
++some_metric{job="foo"}
+100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) *
+100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) *
+a{b!="c"}[1m]
+a{b!~"c"}[1m]
+a{b=~"c"}[1m]
+a{c="d"}[5m] offset
+absent(some_metric{job="foo"})
+absent(up{job="critical-service"})
+absent(up{job="prometheus"})
+anchored{job="test"}
+avg by (instance) (irate(node_cpu_seconds_total{mode!="idle"}[5m]))
+avg(rate(http_requests_total{job="prometheus"}[5m]))
+count_values by (job) ("value", some_metric)
+count_values("value", some_metric)
+count_values("value", some_metric) by (job)
+count_values("value", task:errors:rate10s{job="s"})
+count(count by (instance) (up))
+deriv(rate(http_requests_total[5m])[30m:1m]) >
+end{start="foo"}
+env!="prod"
+floor(some_metric{foo!="bar"})
+foo:bar{a="bc"}
+foo{ bar = "baz" }
+foo{__name__ == "bar"}
+foo{__name__= =}
+foo{__name__="bar" lol}
+foo{__name__="bar"}
+foo{"a"=}
+foo{=""}
+foo{0bar="baz"}
+foo{a!="b"}
+foo{a!~"b"}
+foo{a*"b"}
+foo{a="b", c!="d", e=~"f", g!~"h"}
+foo{a="b", c="d"}
+foo{a="b", foo!="bar", test=~"test", bar!~"baz",}
+foo{a="b", foo!="bar", test=~"test", bar!~"baz"}
+foo{a="b", foo!="bar", test=~"test", bar!~"baz"}
+foo{a="b",}
+foo{a="b"}
+foo{a="b"}
+foo{a=~"b"}
+foo{a>="b"}
+foo{bar "baz"}
+foo{bar='}'}
+foo{bar='baz'}
+foo{bar="baz"
+foo{bar="baz"}
+foo{bar="baz"} @
+foo{bar="baz"} offset
+foo{bar="baz"}[5m]
+foo{bar="baz"}[5m] offset
+foo{bar=}
+foo{bar=`baz`}
+foo{bar=="baz"}
+foo{job="test"}
+foo{NaN='bc'}
+hello{world="jupiter",type="gas",}
+hello{world="jupiter",type="gas"}
+histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))
+histogram_quantile(0.90, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))
+histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))
+histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)) >
+histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service))
+histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service))
+histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+http_requests_total / on(instance) group_left(job) http_requests_errors
+http_requests_total / on(instance) http_requests_errors
+http_requests_total >
+http_requests_total > bool
+http_requests_total{job="api"}[1h]
+http_requests_total{method="GET",status="200"}[5m]
+http_requests_total{method="GET",status="200"}[5m]
+http_requests_total{method="GET"}[30m:5m]
+http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}
+http_requests{job="api"}
+info(http_request_counter_total{namespace="zzz"}, {foo="bar", bar="baz"})
+job="prometheus"
+label_join(some_metric, "dst", ",", "src1", "src2")
+label_replace(metric, "dst", "$1", "src", "(.*)")
+label_replace(metric, "dst", "$1", "src", "(.*)")
+label_replace(some_metric, "dst", "$1", "src", "(.*)")
+label_replace(up, "host", "$1", "instance", "(.*):.*")
+max(sum by (job) (rate(http_requests_total[5m])))
+metric{a="1",b="2",c="3",d="4",e="5",f="6",g="7",h="8",i="9",j="10"}
+metric{label=""}
+metric{label="한국어"}
+metric{label="中文"}
+metric{label="日本語"}
+metric{label=~".*\\.example\\.com"}
+metric{label=~"^(foo|bar|baz)$"}
+path=~"/api/.*"
+quantile(0.9, metric)
+rate(http_requests_total{job="api-server",method="POST",status!~"5.."}[5m])
+smoothed{job="test"}
+some_metric{a:b="b"}
+some_metric{job!="foo"}[5m]
+some_metric{job!~"bar.*"}[5m]
+some_metric{job="foo",instance="bar"}[5m:1m]
+some_metric{job="foo",instance="bar"}[5m]
+some_metric{job="foo",instance=~"bar.*",env!="prod",version!~"v1.*"}[5m]
+some_metric{job="foo"}[5m:1m]
+some_metric{job="foo"}[5m]
+some_metric{job="foo"}[5m] @
+some_metric{job="foo"}[5m] offset
+some_metric{job=~"foo.*"}[5m]
+some_metric{job=~"foo.*"}[5m]
+start{end="foo"}
+status!~"5.."
+sum by () (task:errors:rate10s{job="s"})
+sum by (code) (task:errors:rate10s{job="s"})
+sum by (job, instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m]))
+sum by (job) (rate(http_requests_total{status=~"2.."}[5m])) / sum by (job) (rate(http_requests_total[5m]))
+sum by() (task:errors:rate10s{job="s"})
+sum by(code) (task:errors:rate10s{job="s"})
+sum without () (task:errors:rate10s{job="s"})
+sum without (instance) (rate(http_requests_total[5m]))
+sum without (instance) (task:errors:rate10s{job="s"})
+sum without() (task:errors:rate10s{job="s"})
+sum without(instance) (task:errors:rate10s{job="s"})
+sum(http_requests_total{job="prometheus"})
+sum(rate(http_requests_total[5m])) by (service)
+sum(rate(http_requests_total[5m])) by (service)
+sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) *
+sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+sum(rate(http_requests_total{status=~"5.."}[5m])) by (job) / sum(rate(http_requests_total[5m])) by (job) >
+sum(rate(http_requests_total{status=~"5.."}[5m])) by (service) / sum(rate(http_requests_total[5m])) by (service) *
+topk(10, container_memory_usage_bytes)
+topk(10, container_memory_usage_bytes) by (pod)
+topk(5, task:errors:rate10s{job="s"})

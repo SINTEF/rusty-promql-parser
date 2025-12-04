@@ -8,7 +8,7 @@ use std::fmt;
 
 use nom::{
     IResult, Parser, branch::alt, bytes::complete::tag_no_case, character::complete::char,
-    multi::separated_list0,
+    multi::separated_list0, sequence::delimited,
 };
 
 use crate::lexer::{identifier::label_name, whitespace::ws_opt};
@@ -70,30 +70,21 @@ impl fmt::Display for Grouping {
 /// assert_eq!(g.action, GroupingAction::Without);
 /// ```
 pub fn grouping(input: &str) -> IResult<&str, Grouping> {
-    // Parse the action (by or without)
-    let (rest, action) = alt((
-        tag_no_case("by").map(|_| GroupingAction::By),
-        tag_no_case("without").map(|_| GroupingAction::Without),
-    ))
-    .parse(input)?;
-
-    // Parse whitespace and opening paren
-    let (rest, _) = ws_opt(rest)?;
-    let (rest, _) = char('(')(rest)?;
-    let (rest, _) = ws_opt(rest)?;
-
-    // Parse label list
-    let (rest, labels) = separated_list0(
-        (ws_opt, char(','), ws_opt),
-        label_name.map(|s| s.to_string()),
+    (
+        // Parse the action (by or without)
+        alt((
+            tag_no_case("by").map(|_| GroupingAction::By),
+            tag_no_case("without").map(|_| GroupingAction::Without),
+        )),
+        // Parse: ws "(" ws labels ws ")"
+        delimited(
+            (ws_opt, char('('), ws_opt),
+            separated_list0((ws_opt, char(','), ws_opt), label_name.map(String::from)),
+            (ws_opt, char(')')),
+        ),
     )
-    .parse(rest)?;
-
-    // Parse closing paren
-    let (rest, _) = ws_opt(rest)?;
-    let (rest, _) = char(')')(rest)?;
-
-    Ok((rest, Grouping { action, labels }))
+        .map(|(action, labels)| Grouping { action, labels })
+        .parse(input)
 }
 
 #[cfg(test)]

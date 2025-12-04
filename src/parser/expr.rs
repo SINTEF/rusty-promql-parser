@@ -21,7 +21,7 @@ use nom::{
     character::complete::char,
     combinator::opt,
     multi::separated_list0,
-    sequence::{delimited, preceded},
+    sequence::{delimited, preceded, terminated},
 };
 
 use crate::ast::{Aggregation, BinaryExpr, Call, Expr, SubqueryExpr, UnaryExpr};
@@ -71,24 +71,21 @@ pub fn expr(input: &str) -> IResult<&str, Expr> {
 /// The `min_precedence` parameter ensures we only parse operators at or above
 /// the given precedence level, which handles precedence correctly.
 fn parse_binary_expr(input: &str, min_precedence: u8) -> IResult<&str, Expr> {
-    // Parse the left-hand side (unary expression)
     let (mut input, mut lhs) = parse_unary_expr(input)?;
 
     loop {
-        // Skip whitespace
-        let (remaining, _) = ws_opt(input)?;
-
-        // Try to parse a binary operator
-        let op_result = binary_op(remaining);
-        let (remaining, op) = match op_result {
-            Ok((r, o)) => (r, o),
-            Err(_) => break, // No operator, we're done
+        // Try to parse: ws binary_op ws modifier? ws rhs
+        let Ok((after_ws, _)) = ws_opt(input) else {
+            break;
+        };
+        let Ok((after_op, op)) = binary_op(after_ws) else {
+            break;
         };
 
         // Check precedence
         let op_precedence = op.precedence();
         if op_precedence < min_precedence {
-            break; // Operator has lower precedence, stop
+            break;
         }
 
         // For right-associative operators (^), use same precedence for recursive call
@@ -99,19 +96,12 @@ fn parse_binary_expr(input: &str, min_precedence: u8) -> IResult<&str, Expr> {
             op_precedence + 1
         };
 
-        // Skip whitespace after operator
-        let (remaining, _) = ws_opt(remaining)?;
+        // Parse: ws modifier? ws rhs
+        let (remaining, (_, modifier, _, rhs)) = (ws_opt, opt(binary_modifier), ws_opt, |i| {
+            parse_binary_expr(i, next_min_precedence)
+        })
+            .parse(after_op)?;
 
-        // Try to parse an optional modifier (bool, on, ignoring, etc.)
-        let (remaining, modifier) = opt(binary_modifier).parse(remaining)?;
-
-        // Skip whitespace after modifier
-        let (remaining, _) = ws_opt(remaining)?;
-
-        // Parse the right-hand side with the appropriate precedence
-        let (remaining, rhs) = parse_binary_expr(remaining, next_min_precedence)?;
-
-        // Build the binary expression
         lhs = Expr::Binary(Box::new(BinaryExpr {
             op,
             lhs,
@@ -144,33 +134,30 @@ fn parse_unary_expr(input: &str) -> IResult<&str, Expr> {
 /// - Subquery: `[5m:1m]`
 /// - Modifiers: `offset 5m`, `@ start()`
 fn parse_postfix_expr(input: &str) -> IResult<&str, Expr> {
-    let (mut input, mut expr) = parse_primary_expr(input)?;
+    let (mut rest, mut expr) = parse_primary_expr(input)?;
 
-    // Try to parse postfix operations
+    // Try to parse subquery postfix operations
     loop {
-        let (remaining, _) = ws_opt(input)?;
-
-        // Check for subquery bracket
-        if remaining.starts_with('[') && looks_like_subquery(remaining) {
-            let (remaining, (range, step)) = subquery_range(remaining)?;
-            let (remaining, (at, offset)) = parse_modifiers(remaining)?;
-
-            expr = Expr::Subquery(Box::new(SubqueryExpr {
-                expr,
-                range,
-                step,
-                offset,
-                at,
-            }));
-            input = remaining;
-            continue;
+        // Check if we have a subquery ahead (ws + '[' + subquery pattern)
+        let after_ws = rest.trim_start();
+        if !after_ws.starts_with('[') || !looks_like_subquery(after_ws) {
+            break;
         }
 
-        // No more postfix operations
-        break;
+        let (remaining, (_, ((range, step), (at, offset)))) =
+            (ws_opt, (subquery_range, parse_modifiers)).parse(rest)?;
+
+        expr = Expr::Subquery(Box::new(SubqueryExpr {
+            expr,
+            range,
+            step,
+            offset,
+            at,
+        }));
+        rest = remaining;
     }
 
-    Ok((input, expr))
+    Ok((rest, expr))
 }
 
 /// Parse a primary expression (atoms)
@@ -220,66 +207,52 @@ fn parse_identifier_expr(input: &str) -> IResult<&str, Expr> {
         return parse_aggregation_expr(rest, op);
     }
 
-    // Try to parse as metric name (for vector selector)
-    let (rest, name) = metric_name(input)?;
+    // Parse metric name followed by optional whitespace, then dispatch
+    let (rest, (name, _)) = (metric_name, ws_opt).parse(input)?;
 
-    // Check what follows
-    let (rest, _) = ws_opt(rest)?;
-
-    // If followed by `(`, it's a function call
     if rest.starts_with('(') {
-        return parse_function_call(rest, name);
+        parse_function_call(rest, name)
+    } else {
+        parse_vector_selector_with_name(rest, name)
     }
-
-    // Otherwise it's a vector selector (possibly with labels and modifiers)
-    parse_vector_selector_with_name(rest, name)
 }
 
 /// Parse an aggregation expression
 fn parse_aggregation_expr(input: &str, op: Keyword) -> IResult<&str, Expr> {
-    let (rest, _) = ws_opt(input)?;
-
     // Try to parse grouping before the expression
-    let (rest, grouping_before) = opt((grouping, ws_opt).map(|(g, _)| g)).parse(rest)?;
+    let (rest, grouping_before) =
+        preceded(ws_opt, opt(terminated(grouping, ws_opt))).parse(input)?;
 
     // Parse the arguments in parentheses
-    let (rest, _) = char('(')(rest)?;
-    let (rest, _) = ws_opt(rest)?;
-
-    // For parametric aggregations (topk, quantile, etc.), first arg is the parameter
-    let (rest, (param, inner_expr)) = if op.is_aggregation_with_param() {
-        // Parse parameter expression
-        let (rest, param) = expr(rest)?;
-        let (rest, _) = ws_opt(rest)?;
-        let (rest, _) = char(',')(rest)?;
-        let (rest, _) = ws_opt(rest)?;
-        // Parse inner expression
-        let (rest, inner) = expr(rest)?;
-        (rest, (Some(param), inner))
-    } else {
-        // Just parse inner expression
-        let (rest, inner) = expr(rest)?;
-        (rest, (None, inner))
-    };
-
-    let (rest, _) = ws_opt(rest)?;
-    let (rest, _) = char(')')(rest)?;
-    let (rest, _) = ws_opt(rest)?;
+    let (rest, (param, inner_expr)) = delimited(
+        (char('('), ws_opt),
+        |i| {
+            if op.is_aggregation_with_param() {
+                // Parametric: parse parameter, comma, then inner expression
+                let (rest, (param, _, _, _, inner)) =
+                    (expr, ws_opt, char(','), ws_opt, expr).parse(i)?;
+                Ok((rest, (Some(param), inner)))
+            } else {
+                // Non-parametric: just parse inner expression
+                expr.map(|inner| (None, inner)).parse(i)
+            }
+        },
+        (ws_opt, char(')')),
+    )
+    .parse(rest)?;
 
     // Try to parse grouping after the expression (if not already parsed)
     let (rest, grouping_after) = if grouping_before.is_none() {
-        opt(grouping).parse(rest)?
+        preceded(ws_opt, opt(grouping)).parse(rest)?
     } else {
         (rest, None)
     };
-
-    let grouping = grouping_before.or(grouping_after);
 
     let agg = Aggregation {
         op: op.as_str().to_string(),
         expr: inner_expr,
         param,
-        grouping,
+        grouping: grouping_before.or(grouping_after),
     };
 
     Ok((rest, Expr::Aggregation(Box::new(agg))))
@@ -300,51 +273,42 @@ fn parse_function_call<'a>(input: &'a str, name: &str) -> IResult<&'a str, Expr>
 fn parse_vector_selector_with_name<'a>(input: &'a str, name: &str) -> IResult<&'a str, Expr> {
     use crate::parser::selector::{MatrixSelector, VectorSelector};
 
-    let mut rest = input;
-    let mut matchers = Vec::new();
+    // Parse optional label matchers (only if input starts with '{')
+    let (rest, matchers) = if input.starts_with('{') {
+        label_matchers(input)?
+    } else {
+        (input, Vec::new())
+    };
 
-    // Check for label matchers
-    if rest.starts_with('{') {
-        let (remaining, labels) = label_matchers(rest)?;
-        matchers = labels;
-        rest = remaining;
-    }
-
-    let (rest, _) = ws_opt(rest)?;
-
-    // Check for matrix selector bracket
-    if rest.starts_with('[') && !looks_like_subquery(rest) {
-        // Matrix selector
-        let (remaining, _) = char('[')(rest)?;
-        let (remaining, range) = duration(remaining)?;
-        let (remaining, _) = char(']')(remaining)?;
-
-        let (remaining, (at, offset)) = parse_modifiers(remaining)?;
-
-        let selector = VectorSelector {
-            name: Some(name.to_string()),
-            matchers,
-            offset,
-            at,
-        };
-
-        return Ok((
-            remaining,
-            Expr::MatrixSelector(MatrixSelector { selector, range }),
-        ));
+    // After whitespace, check if this is a matrix selector
+    let after_ws = rest.trim_start();
+    if after_ws.starts_with('[') && !looks_like_subquery(after_ws) {
+        // Matrix selector: ws [duration] modifiers
+        return (ws_opt, char('['), duration, char(']'), parse_modifiers)
+            .map(|(_, _, range, _, (at, offset))| {
+                let selector = VectorSelector {
+                    name: Some(name.to_string()),
+                    matchers: matchers.clone(),
+                    offset,
+                    at,
+                };
+                Expr::MatrixSelector(MatrixSelector { selector, range })
+            })
+            .parse(rest);
     }
 
     // Vector selector with optional modifiers
-    let (rest, (at, offset)) = parse_modifiers(rest)?;
-
-    let selector = VectorSelector {
-        name: Some(name.to_string()),
-        matchers,
-        offset,
-        at,
-    };
-
-    Ok((rest, Expr::VectorSelector(selector)))
+    (ws_opt, parse_modifiers)
+        .map(|(_, (at, offset))| {
+            let selector = VectorSelector {
+                name: Some(name.to_string()),
+                matchers: matchers.clone(),
+                offset,
+                at,
+            };
+            Expr::VectorSelector(selector)
+        })
+        .parse(rest)
 }
 
 /// Parse a vector selector starting with just labels (no metric name)
@@ -369,40 +333,34 @@ fn parse_labels_only_selector(input: &str) -> IResult<&str, Expr> {
         matchers
     };
 
-    let (rest, _) = ws_opt(rest)?;
-
-    // Check for matrix selector bracket
-    if rest.starts_with('[') && !looks_like_subquery(rest) {
-        let (remaining, _) = char('[')(rest)?;
-        let (remaining, range) = duration(remaining)?;
-        let (remaining, _) = char(']')(remaining)?;
-
-        let (remaining, (at, offset)) = parse_modifiers(remaining)?;
-
-        let selector = VectorSelector {
-            name,
-            matchers: other_matchers,
-            offset,
-            at,
-        };
-
-        return Ok((
-            remaining,
-            Expr::MatrixSelector(MatrixSelector { selector, range }),
-        ));
+    // After whitespace, check if this is a matrix selector
+    let after_ws = rest.trim_start();
+    if after_ws.starts_with('[') && !looks_like_subquery(after_ws) {
+        return (ws_opt, char('['), duration, char(']'), parse_modifiers)
+            .map(|(_, _, range, _, (at, offset))| {
+                let selector = VectorSelector {
+                    name: name.clone(),
+                    matchers: other_matchers.clone(),
+                    offset,
+                    at,
+                };
+                Expr::MatrixSelector(MatrixSelector { selector, range })
+            })
+            .parse(rest);
     }
 
     // Vector selector
-    let (rest, (at, offset)) = parse_modifiers(rest)?;
-
-    let selector = VectorSelector {
-        name,
-        matchers: other_matchers,
-        offset,
-        at,
-    };
-
-    Ok((rest, Expr::VectorSelector(selector)))
+    (ws_opt, parse_modifiers)
+        .map(|(_, (at, offset))| {
+            let selector = VectorSelector {
+                name: name.clone(),
+                matchers: other_matchers.clone(),
+                offset,
+                at,
+            };
+            Expr::VectorSelector(selector)
+        })
+        .parse(rest)
 }
 
 #[cfg(test)]

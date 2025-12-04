@@ -21,8 +21,8 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, tag_no_case},
-    character::complete::char,
-    combinator::{map, opt, value},
+    character::complete::{char, satisfy},
+    combinator::{map, not, opt, peek, value},
     multi::separated_list0,
     sequence::delimited,
 };
@@ -32,20 +32,9 @@ use crate::ast::{
 };
 use crate::lexer::{identifier::label_name, whitespace::ws_opt};
 
-/// Check that the next character is not alphanumeric or underscore (word boundary)
-fn check_word_boundary<'a>(
-    input: &'a str,
-    rest: &str,
-) -> Result<(), nom::Err<nom::error::Error<&'a str>>> {
-    if let Some(c) = rest.chars().next()
-        && (c.is_alphanumeric() || c == '_')
-    {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
-    }
-    Ok(())
+/// Parser that succeeds only at a word boundary (not followed by alphanumeric or underscore)
+fn word_boundary(input: &str) -> IResult<&str, ()> {
+    not(peek(satisfy(|c| c.is_alphanumeric() || c == '_'))).parse(input)
 }
 
 /// Parse a binary operator
@@ -77,36 +66,37 @@ pub fn binary_op(input: &str) -> IResult<&str, BinaryOp> {
 /// Parse keyword binary operators (case-insensitive)
 fn keyword_binary_op(input: &str) -> IResult<&str, BinaryOp> {
     // We need to ensure these are complete words, not prefixes
-    let (rest, op) = alt((
-        value(BinaryOp::And, tag_no_case("and")),
-        value(BinaryOp::Or, tag_no_case("or")),
-        value(BinaryOp::Unless, tag_no_case("unless")),
-        value(BinaryOp::Atan2, tag_no_case("atan2")),
-    ))
-    .parse(input)?;
-
-    check_word_boundary(input, rest)?;
-    Ok((rest, op))
+    (
+        alt((
+            value(BinaryOp::And, tag_no_case("and")),
+            value(BinaryOp::Or, tag_no_case("or")),
+            value(BinaryOp::Unless, tag_no_case("unless")),
+            value(BinaryOp::Atan2, tag_no_case("atan2")),
+        )),
+        word_boundary,
+    )
+        .map(|(op, _)| op)
+        .parse(input)
 }
 
 /// Parse the `bool` modifier
 fn bool_modifier(input: &str) -> IResult<&str, bool> {
-    let (rest, _) = tag_no_case("bool")(input)?;
-
-    check_word_boundary(input, rest)?;
-    Ok((rest, true))
+    (tag_no_case("bool"), word_boundary)
+        .map(|_| true)
+        .parse(input)
 }
 
 /// Parse the matching operation (on/ignoring)
 fn vector_matching_op(input: &str) -> IResult<&str, VectorMatchingOp> {
-    let (rest, op) = alt((
-        value(VectorMatchingOp::On, tag_no_case("on")),
-        value(VectorMatchingOp::Ignoring, tag_no_case("ignoring")),
-    ))
-    .parse(input)?;
-
-    check_word_boundary(input, rest)?;
-    Ok((rest, op))
+    (
+        alt((
+            value(VectorMatchingOp::On, tag_no_case("on")),
+            value(VectorMatchingOp::Ignoring, tag_no_case("ignoring")),
+        )),
+        word_boundary,
+    )
+        .map(|(op, _)| op)
+        .parse(input)
 }
 
 /// Parse a label list in parentheses: `(label1, label2)`
@@ -124,37 +114,33 @@ fn label_list(input: &str) -> IResult<&str, Vec<String>> {
 
 /// Parse the group modifier (group_left/group_right)
 fn group_modifier(input: &str) -> IResult<&str, GroupModifier> {
-    let (rest, side) = alt((
-        value(GroupSide::Left, tag_no_case("group_left")),
-        value(GroupSide::Right, tag_no_case("group_right")),
-    ))
-    .parse(input)?;
-
-    check_word_boundary(input, rest)?;
-
-    let (rest, _) = ws_opt(rest)?;
-
-    // Optional label list
-    let (rest, labels) = opt(label_list).parse(rest)?;
-
-    Ok((
-        rest,
-        GroupModifier {
+    (
+        alt((
+            value(GroupSide::Left, tag_no_case("group_left")),
+            value(GroupSide::Right, tag_no_case("group_right")),
+        )),
+        word_boundary,
+        ws_opt,
+        opt(label_list),
+    )
+        .map(|(side, _, _, labels)| GroupModifier {
             side,
             labels: labels.unwrap_or_default(),
-        },
-    ))
+        })
+        .parse(input)
 }
 
 /// Parse vector matching specification: `on(labels) group_left(labels)`
 fn vector_matching(input: &str) -> IResult<&str, VectorMatching> {
-    let (rest, op) = vector_matching_op(input)?;
-    let (rest, _) = ws_opt(rest)?;
-    let (rest, labels) = label_list(rest)?;
-    let (rest, _) = ws_opt(rest)?;
-    let (rest, group) = opt(group_modifier).parse(rest)?;
-
-    Ok((rest, VectorMatching { op, labels, group }))
+    (
+        vector_matching_op,
+        ws_opt,
+        label_list,
+        ws_opt,
+        opt(group_modifier),
+    )
+        .map(|(op, _, labels, _, group)| VectorMatching { op, labels, group })
+        .parse(input)
 }
 
 /// Parse binary expression modifier: `bool on(labels) group_left(labels)`
@@ -162,16 +148,10 @@ fn vector_matching(input: &str) -> IResult<&str, VectorMatching> {
 /// This parses the optional modifiers that can appear between the operator
 /// and the right-hand side operand.
 pub fn binary_modifier(input: &str) -> IResult<&str, BinaryModifier> {
-    let (rest, _) = ws_opt(input)?;
+    let (rest, (_, return_bool, _, matching)) =
+        (ws_opt, opt(bool_modifier), ws_opt, opt(vector_matching)).parse(input)?;
 
-    // Try to parse bool first
-    let (rest, return_bool) = opt(bool_modifier).parse(rest)?;
-    let (rest, _) = ws_opt(rest)?;
-
-    // Then try to parse vector matching
-    let (rest, matching) = opt(vector_matching).parse(rest)?;
-
-    // If neither, return default
+    // If neither bool nor matching, fail
     if return_bool.is_none() && matching.is_none() {
         return Err(nom::Err::Error(nom::error::Error::new(
             input,

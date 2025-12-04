@@ -66,9 +66,9 @@ This project is mostly vibecoded, using the official [Prometheus PromQL parser](
 
 The advanced stochastic parrots were requested to import the test cases from the original Prometheus parser to ensure some compatibility.
 
-In addition to the unit tests, we run some AFL fuzzing to ensure robustness against malformed inputs. One crash was found and fixed during development. A number overflow panic when dealing with long durations and unit conversions.
+In addition to the unit tests, we run some AFL fuzzing to ensure robustness against malformed inputs. One crash was found and fixed during development: a number overflow panic when dealing with long durations and unit conversions.
 
-This is not perfect, but unit tests, fuzzing, nom combinators, and rust, should make this parser reasonably robust.
+This is not perfect, but unit tests, fuzzing, nom combinators, and Rust, should make this parser reasonably robust.
 
 ## Why?
 

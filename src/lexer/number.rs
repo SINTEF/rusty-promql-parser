@@ -1,13 +1,40 @@
-// Number literal parser for PromQL
-//
-// Supports:
-// - Integers: 42, 0, 123
-// - Floats: 3.14, .5, 5.
-// - Hexadecimal: 0x1F, 0X2A
-// - Octal: 0755 (leading zero)
-// - Scientific notation: 1e10, 2.5E-3
-// - Special values: Inf, +Inf, -Inf, NaN (case-insensitive)
-// - Signed numbers: +42, -3.14
+//! Number literal parser for PromQL.
+//!
+//! This module handles parsing of all numeric formats supported by PromQL:
+//!
+//! - **Integers**: `42`, `0`, `123`
+//! - **Floats**: `3.14`, `.5`, `5.`
+//! - **Hexadecimal**: `0x1F`, `0X2A`
+//! - **Octal**: `0755` (legacy), `0o755` (modern)
+//! - **Scientific notation**: `1e10`, `2.5E-3`
+//! - **Special values**: `Inf`, `+Inf`, `-Inf`, `NaN` (case-insensitive)
+//! - **Signed numbers**: `+42`, `-3.14`
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::lexer::number::number;
+//!
+//! // Decimal
+//! let (_, n) = number("42").unwrap();
+//! assert_eq!(n, 42.0);
+//!
+//! // Float
+//! let (_, n) = number("3.14").unwrap();
+//! assert!((n - 3.14).abs() < f64::EPSILON);
+//!
+//! // Hexadecimal
+//! let (_, n) = number("0xFF").unwrap();
+//! assert_eq!(n, 255.0);
+//!
+//! // Scientific notation
+//! let (_, n) = number("1e-3").unwrap();
+//! assert!((n - 0.001).abs() < f64::EPSILON);
+//!
+//! // Special values
+//! let (_, n) = number("Inf").unwrap();
+//! assert!(n.is_infinite());
+//! ```
 
 use nom::{
     IResult, Parser,

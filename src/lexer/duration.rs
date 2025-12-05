@@ -1,21 +1,41 @@
-// Duration literal parser for PromQL
-//
-// Durations represent time spans and are used in:
-// - Range selectors: metric[5m]
-// - Offset modifiers: metric offset 1h
-// - Subqueries: metric[30m:5m]
-//
-// Format: <number><unit>[<number><unit>...]
-// Units (in descending size order):
-//   y  - year (365 days)
-//   w  - week (7 days)
-//   d  - day (24 hours)
-//   h  - hour
-//   m  - minute
-//   s  - second
-//   ms - millisecond
-//
-// Examples: 5m, 1h30m, 2d12h, 100ms
+//! Duration literal parser for PromQL.
+//!
+//! Durations represent time spans and are used in:
+//! - Range selectors: `metric[5m]`
+//! - Offset modifiers: `metric offset 1h`
+//! - Subqueries: `metric[30m:5m]`
+//!
+//! # Format
+//!
+//! Durations consist of one or more `<number><unit>` pairs:
+//!
+//! | Unit | Name        | Milliseconds    |
+//! |------|-------------|-----------------|
+//! | `ms` | millisecond | 1               |
+//! | `s`  | second      | 1,000           |
+//! | `m`  | minute      | 60,000          |
+//! | `h`  | hour        | 3,600,000       |
+//! | `d`  | day         | 86,400,000      |
+//! | `w`  | week        | 604,800,000     |
+//! | `y`  | year        | 31,536,000,000  |
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::lexer::duration::duration;
+//!
+//! // Simple durations
+//! let (_, dur) = duration("5m").unwrap();
+//! assert_eq!(dur.as_millis(), 300_000);
+//!
+//! // Compound durations
+//! let (_, dur) = duration("1h30m").unwrap();
+//! assert_eq!(dur.as_millis(), 5_400_000);
+//!
+//! // Milliseconds
+//! let (_, dur) = duration("100ms").unwrap();
+//! assert_eq!(dur.as_millis(), 100);
+//! ```
 
 use nom::{
     IResult, Parser,
@@ -27,7 +47,20 @@ use nom::{
     sequence::pair,
 };
 
-/// Duration value in milliseconds
+/// A duration value representing a time span in milliseconds.
+///
+/// Durations are used throughout PromQL for specifying time ranges,
+/// offsets, and subquery steps.
+///
+/// # Example
+///
+/// ```rust
+/// use rusty_promql_parser::lexer::duration::Duration;
+///
+/// let dur = Duration::from_secs(300);
+/// assert_eq!(dur.as_millis(), 300_000);
+/// assert_eq!(dur.to_string(), "5m");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Duration {
     /// Duration in milliseconds (can be negative for negative offsets)
@@ -124,7 +157,7 @@ impl std::fmt::Display for Duration {
     }
 }
 
-/// Duration unit with its millisecond multiplier
+/// Duration unit with its millisecond multiplier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DurationUnit {
     Millisecond, // ms - 1

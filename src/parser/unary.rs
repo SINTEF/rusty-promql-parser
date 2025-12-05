@@ -1,17 +1,33 @@
-//! Unary expression parsing for PromQL
+//! Unary expression parsing for PromQL.
 //!
-//! This module handles parsing unary operators:
-//! - `-expr` - Negation
-//! - `+expr` - No-op (identity)
+//! PromQL supports two unary operators:
+//!
+//! - `-expr` - Negation (multiplies by -1)
+//! - `+expr` - Identity (no-op)
 //!
 //! Unary operators have higher precedence than binary operators,
-//! except for the power operator `^`.
+//! except for the power operator `^`. This means `-2^3` is parsed as `-(2^3)`.
 //!
-//! Examples:
-//! - `-some_metric`
-//! - `+1`
-//! - `-rate(some_metric[5m])`
-//! - `--some_metric` (double negation)
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::parser::unary::unary_op;
+//! use rusty_promql_parser::ast::UnaryOp;
+//!
+//! let (_, op) = unary_op("-").unwrap();
+//! assert_eq!(op, UnaryOp::Minus);
+//!
+//! let (_, op) = unary_op("+").unwrap();
+//! assert_eq!(op, UnaryOp::Plus);
+//! ```
+//!
+//! # Common Usage
+//!
+//! ```text
+//! -some_metric           # Negate a metric
+//! -rate(requests[5m])    # Negate a function result
+//! --metric               # Double negation (identity)
+//! ```
 
 use nom::{
     IResult, Parser,
@@ -45,11 +61,11 @@ pub fn unary_op(input: &str) -> IResult<&str, UnaryOp> {
     .parse(input)
 }
 
-/// Check if the input starts with a unary operator (after optional whitespace)
+/// Check if the input starts with a unary operator (after optional whitespace).
 ///
 /// This is useful for lookahead in the expression parser.
-/// Uses nom's `peek` to avoid copying/modifying the input string.
-pub fn starts_with_unary(input: &str) -> bool {
+#[allow(dead_code)]
+pub(crate) fn starts_with_unary(input: &str) -> bool {
     starts_with_unary_parser(input).is_ok()
 }
 

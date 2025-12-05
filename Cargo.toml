@@ -2,7 +2,20 @@
 name = "rusty-promql-parser"
 version = "0.1.0"
 edition = "2024"
+description = "A Prometheus PromQL parser written in Rust"
 license = "Apache-2.0"
+keywords = ["promql", "parser", "prometheus"]
+documentation = "https://docs.rs/rusty-promql-parser"
+authors = ["Antoine Pultier <antoine.pultier@sintef.no>"]
+repository = "https://github.com/sintef/rusty-promql-parser"
+include = [
+  "README.md",
+  "LICENSE",
+  "src/*.rs",
+  "src/**/*.rs",
+  "Cargo.toml",
+  "Cargo.lock",
+]
 
 [dependencies]
 nom = "8.0"

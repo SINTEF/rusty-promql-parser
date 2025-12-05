@@ -1,12 +1,22 @@
-// Whitespace and comment parsers for PromQL
-//
-// Whitespace in PromQL includes:
-// - Space (' ')
-// - Tab ('\t')
-// - Newline ('\n')
-// - Carriage return ('\r')
-//
-// Comments start with '#' and extend to the end of the line (but don't consume the newline).
+//! Whitespace and comment parsers for PromQL.
+//!
+//! This module provides parsers for handling whitespace and comments
+//! in PromQL expressions. Whitespace includes spaces, tabs, newlines,
+//! and carriage returns. Comments start with `#` and extend to end of line.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::lexer::whitespace::{ws_opt, line_comment};
+//!
+//! // Skip optional whitespace
+//! let (rest, _) = ws_opt("  \n  foo").unwrap();
+//! assert_eq!(rest, "foo");
+//!
+//! // Skip whitespace and comments
+//! let (rest, _) = ws_opt("# comment\nfoo").unwrap();
+//! assert_eq!(rest, "foo");
+//! ```
 
 use nom::{
     IResult, Parser,

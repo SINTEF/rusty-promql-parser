@@ -1,15 +1,51 @@
-// String literal parser for PromQL
-//
-// Supports three string literal formats:
-// - Double-quoted strings: "hello \"world\""
-// - Single-quoted strings: 'hello \'world\''
-// - Raw/backtick strings: `no escapes here`
-//
-// Escape sequences (for double and single-quoted strings):
-// - Simple escapes: \a \b \f \n \r \t \v \\ \" \'
-// - Octal escapes: \NNN (3 octal digits, max value 255)
-// - Hex escapes: \xNN (2 hex digits, max value 255)
-// - Unicode escapes: \uNNNN (4 hex digits), \UNNNNNNNN (8 hex digits)
+//! String literal parser for PromQL.
+//!
+//! PromQL supports three string literal formats:
+//!
+//! - **Double-quoted**: `"hello \"world\""`
+//! - **Single-quoted**: `'hello \'world\''`
+//! - **Raw/backtick**: `` `no escapes here` ``
+//!
+//! # Escape Sequences
+//!
+//! Double and single-quoted strings support these escape sequences:
+//!
+//! | Escape | Description        |
+//! |--------|--------------------|
+//! | `\a`   | Bell               |
+//! | `\b`   | Backspace          |
+//! | `\f`   | Form feed          |
+//! | `\n`   | Newline            |
+//! | `\r`   | Carriage return    |
+//! | `\t`   | Tab                |
+//! | `\v`   | Vertical tab       |
+//! | `\\`   | Backslash          |
+//! | `\"`   | Double quote       |
+//! | `\'`   | Single quote       |
+//! | `\xNN` | Hex (2 digits)     |
+//! | `\NNN` | Octal (3 digits)   |
+//! | `\uNNNN` | Unicode (4 hex)  |
+//! | `\UNNNNNNNN` | Unicode (8 hex) |
+//!
+//! Raw strings (backtick) have no escape processing.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::lexer::string::string_literal;
+//!
+//! // Double-quoted
+//! let (_, s) = string_literal(r#""hello""#).unwrap();
+//! assert_eq!(s, "hello");
+//!
+//! // Single-quoted with escape
+//! let (_, s) = string_literal(r"'line\nbreak'").unwrap();
+//! assert_eq!(s, "line\nbreak");
+//!
+//! // Raw string (no escapes)
+//! let (_, s) = string_literal(r"`\n is literal`").unwrap();
+//! assert_eq!(s, r"\n is literal");
+//! ```
 
 use nom::{
     IResult, Parser,

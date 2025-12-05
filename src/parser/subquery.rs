@@ -1,19 +1,37 @@
-//! Subquery expression parsing for PromQL
+//! Subquery expression parsing for PromQL.
 //!
 //! Subqueries allow evaluating an instant vector expression over a time range,
 //! producing a range vector. This is useful for applying range vector functions
-//! (like `avg_over_time`) to the output of other queries.
+//! (like `avg_over_time`) to expressions that would otherwise produce instant vectors.
 //!
-//! Syntax: `expr[range:step]` or `expr[range:]`
+//! # Syntax
 //!
-//! - `range` - The lookback window (required)
-//! - `step` - The evaluation interval (optional, uses default if omitted)
+//! ```text
+//! expr[range:step]  # With explicit step
+//! expr[range:]      # With default step
+//! ```
 //!
-//! Examples:
-//! - `some_metric[5m:1m]` - Evaluate every minute over 5 minutes
-//! - `some_metric[5m:]` - Evaluate at default interval over 5 minutes
-//! - `rate(http_requests[5m])[30m:1m]` - Rate over 5m, sampled every minute for 30m
-//! - `avg_over_time(rate(http_requests[5m])[30m:1m])` - Average of rates
+//! - **range**: The lookback window (required)
+//! - **step**: The evaluation interval (optional; uses default if omitted)
+//!
+//! # Examples
+//!
+//! ```text
+//! some_metric[5m:1m]              # Evaluate every minute over 5 minutes
+//! rate(http_requests[5m])[30m:1m] # Rate over 5m, sampled every minute for 30m
+//! avg_over_time(metric[5m:])      # Average using default step
+//! ```
+//!
+//! # Code Example
+//!
+//! ```rust
+//! use rusty_promql_parser::parser::subquery::subquery_range;
+//!
+//! let (rest, (range, step)) = subquery_range("[5m:1m]").unwrap();
+//! assert!(rest.is_empty());
+//! assert_eq!(range.as_millis(), 5 * 60 * 1000);
+//! assert_eq!(step.unwrap().as_millis(), 60 * 1000);
+//! ```
 
 use nom::{
     IResult, Parser,
@@ -56,14 +74,15 @@ pub fn subquery_range(input: &str) -> IResult<&str, (Duration, Option<Duration>)
     .parse(input)
 }
 
-/// Try to parse a subquery suffix on an expression
+/// Try to parse a subquery suffix on an expression.
 ///
 /// This function attempts to parse `[range:step]` followed by optional modifiers.
 /// Returns None if the input doesn't start with a subquery bracket.
 ///
 /// Note: This only parses the subquery part, not the inner expression.
 /// The caller is responsible for providing the already-parsed inner expression.
-pub fn try_parse_subquery(input: &str, expr: Expr) -> IResult<&str, SubqueryExpr> {
+#[allow(dead_code)]
+pub(crate) fn try_parse_subquery(input: &str, expr: Expr) -> IResult<&str, SubqueryExpr> {
     map(
         (subquery_range, parse_modifiers),
         move |((range, step), (at, offset))| SubqueryExpr {
@@ -77,14 +96,12 @@ pub fn try_parse_subquery(input: &str, expr: Expr) -> IResult<&str, SubqueryExpr
     .parse(input)
 }
 
-/// Check if the input looks like a subquery bracket `[duration:`
+/// Check if the input looks like a subquery bracket `[duration:`.
 ///
-/// This is useful for distinguishing between:
-/// - Matrix selector: `metric[5m]`
-/// - Subquery: `metric[5m:]` or `metric[5m:1m]`
-///
-/// The key difference is the presence of `:` after the first duration.
-pub fn looks_like_subquery(input: &str) -> bool {
+/// This distinguishes between matrix selectors (`metric[5m]`) and
+/// subqueries (`metric[5m:]` or `metric[5m:1m]`). The key difference
+/// is the presence of `:` after the first duration.
+pub(crate) fn looks_like_subquery(input: &str) -> bool {
     // Pattern: '[' duration ':'
     peek(recognize((char('['), duration, char(':'))))
         .parse(input)

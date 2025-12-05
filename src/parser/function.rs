@@ -1,18 +1,45 @@
-//! Function definitions for PromQL
+//! Built-in PromQL function definitions.
 //!
-//! This module defines the built-in PromQL functions and their signatures.
-//! The actual parsing of function calls is handled by the expression parser.
+//! This module defines the signatures of all built-in PromQL functions.
+//! It can be used for validation and documentation purposes.
+//!
+//! # Function Categories
+//!
+//! - **Math functions**: `abs`, `ceil`, `floor`, `exp`, `sqrt`, `ln`, `log2`, `log10`
+//! - **Trigonometric**: `acos`, `asin`, `atan`, `cos`, `sin`, `tan` (and hyperbolic variants)
+//! - **Rounding/clamping**: `round`, `clamp`, `clamp_min`, `clamp_max`
+//! - **Sorting**: `sort`, `sort_desc`, `sort_by_label`
+//! - **Rate functions**: `rate`, `irate`, `increase`, `delta`, `idelta`, `deriv`
+//! - **Aggregation over time**: `avg_over_time`, `sum_over_time`, `min_over_time`, etc.
+//! - **Time functions**: `time`, `timestamp`, `hour`, `minute`, `month`, `year`
+//! - **Label functions**: `label_replace`, `label_join`
+//! - **Histogram functions**: `histogram_quantile`, `histogram_avg`, `histogram_count`
+//!
+//! # Example
+//!
+//! ```rust
+//! use rusty_promql_parser::parser::function::{get_function, is_function};
+//!
+//! assert!(is_function("rate"));
+//! assert!(!is_function("unknown_func"));
+//!
+//! let func = get_function("rate").unwrap();
+//! assert_eq!(func.name, "rate");
+//! assert_eq!(func.min_args(), 1);
+//! ```
 
-/// Value types for function arguments and return values
+/// Value types for function arguments and return values.
+///
+/// PromQL has four fundamental value types that functions operate on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueType {
-    /// Scalar value (single number)
+    /// Scalar value (single number).
     Scalar,
-    /// Instant vector (set of time series with single sample each)
+    /// Instant vector (set of time series with single sample each).
     Vector,
-    /// Range vector (set of time series with samples over time range)
+    /// Range vector (set of time series with samples over time range).
     Matrix,
-    /// String value
+    /// String value.
     String,
 }
 
@@ -27,37 +54,43 @@ impl std::fmt::Display for ValueType {
     }
 }
 
-/// Variadic argument specification
+/// Variadic argument specification.
+///
+/// Determines how many arguments a function accepts beyond the required ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variadic {
-    /// Fixed number of arguments (only those specified in arg_types)
+    /// Fixed number of arguments (only those specified in `arg_types`).
     None,
-    /// Last argument type can repeat (negative value in Go)
+    /// Last argument type can repeat indefinitely.
     Repeat,
-    /// Optional trailing arguments (number indicates how many of the arg_types are optional)
+    /// Optional trailing arguments (number indicates how many of `arg_types` are optional).
     Optional(u8),
 }
 
-/// Function signature definition
+/// Function signature definition.
+///
+/// Describes the name, argument types, return type, and variadic behavior
+/// of a built-in PromQL function.
 #[derive(Debug, Clone)]
 pub struct Function {
-    /// Function name
+    /// Function name.
     pub name: &'static str,
-    /// Argument types (in order)
+    /// Argument types (in order).
     pub arg_types: &'static [ValueType],
-    /// Variadic specification
+    /// Variadic specification.
     pub variadic: Variadic,
-    /// Return type
+    /// Return type.
     pub return_type: ValueType,
-    /// Whether this is an experimental function
+    /// Whether this is an experimental function.
     pub experimental: bool,
 }
 
 impl Function {
-    /// Get the minimum number of arguments
+    /// Get the minimum number of arguments.
     ///
-    /// For Variadic::Repeat, this is arg_types.len() - 1 (matching Go semantics)
-    /// For Variadic::Optional(n), this is arg_types.len() - n
+    /// - For `Variadic::Repeat`: `arg_types.len() - 1`
+    /// - For `Variadic::Optional(n)`: `arg_types.len() - n`
+    /// - For `Variadic::None`: `arg_types.len()`
     pub fn min_args(&self) -> usize {
         match self.variadic {
             Variadic::None => self.arg_types.len(),
@@ -66,7 +99,9 @@ impl Function {
         }
     }
 
-    /// Get the maximum number of arguments (None means unlimited)
+    /// Get the maximum number of arguments.
+    ///
+    /// Returns `None` for variadic functions that accept unlimited arguments.
     pub fn max_args(&self) -> Option<usize> {
         match self.variadic {
             Variadic::None => Some(self.arg_types.len()),
@@ -76,7 +111,10 @@ impl Function {
     }
 }
 
-/// All built-in PromQL functions
+/// All built-in PromQL functions.
+///
+/// This static array contains the definitions of all standard PromQL functions
+/// as defined in the Prometheus documentation.
 pub static FUNCTIONS: &[Function] = &[
     // Math functions
     Function {
@@ -677,12 +715,14 @@ pub static FUNCTIONS: &[Function] = &[
     },
 ];
 
-/// Look up a function by name
+/// Look up a function by name.
+///
+/// Returns `None` if the function is not a known built-in.
 pub fn get_function(name: &str) -> Option<&'static Function> {
     FUNCTIONS.iter().find(|f| f.name == name)
 }
 
-/// Check if a name is a known function
+/// Check if a name is a known built-in function.
 pub fn is_function(name: &str) -> bool {
     get_function(name).is_some()
 }

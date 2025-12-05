@@ -1,18 +1,46 @@
-//! Main expression parser for PromQL
+//! Main expression parser for PromQL.
 //!
-//! This module provides the top-level expression parser that combines all
-//! individual parsers into a unified grammar using a Pratt parser (precedence climbing)
-//! for binary operators.
+//! This module provides the top-level [`expr`] function that parses any valid
+//! PromQL expression into an AST. It uses a Pratt parser (precedence climbing)
+//! algorithm for correct handling of binary operator precedence and associativity.
 //!
-//! Expression grammar (simplified):
+//! # Expression Grammar (Simplified)
+//!
 //! ```text
 //! expr          = unary_expr | binary_expr
 //! binary_expr   = expr binary_op expr
 //! unary_expr    = unary_op? postfix_expr
 //! postfix_expr  = primary_expr postfix*
 //! postfix       = subquery_range | matrix_range
-//! primary_expr  = number | string | vector_selector | paren_expr | function_call | aggregation
+//! primary_expr  = number | string | selector | paren_expr | function_call | aggregation
 //! paren_expr    = "(" expr ")"
+//! ```
+//!
+//! # Operator Precedence (Lowest to Highest)
+//!
+//! 1. `or` - Set union
+//! 2. `and`, `unless` - Set intersection/difference
+//! 3. `==`, `!=`, `<`, `<=`, `>`, `>=` - Comparison
+//! 4. `+`, `-` - Addition/subtraction
+//! 5. `*`, `/`, `%`, `atan2` - Multiplication/division
+//! 6. `^` - Power (right-associative)
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::parser::expr::expr;
+//!
+//! // Simple metric
+//! let (rest, e) = expr("http_requests_total").unwrap();
+//! assert!(rest.is_empty());
+//!
+//! // Binary expression with correct precedence
+//! let (rest, e) = expr("1 + 2 * 3").unwrap(); // Parses as: 1 + (2 * 3)
+//! assert!(rest.is_empty());
+//!
+//! // Complex aggregation
+//! let (rest, e) = expr("sum(rate(http_requests[5m])) by (job)").unwrap();
+//! assert!(rest.is_empty());
 //! ```
 
 use nom::{

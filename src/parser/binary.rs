@@ -1,30 +1,51 @@
-//! Binary expression parsing for PromQL
+//! Binary expression parsing for PromQL.
 //!
-//! This module implements a Pratt parser (precedence climbing) for binary operators.
+//! This module handles parsing of binary operators and their modifiers.
 //!
-//! Binary operators in PromQL (lowest to highest precedence):
-//! 1. `or` - Set union
-//! 2. `and`, `unless` - Set intersection/difference
-//! 3. `==`, `!=`, `<`, `<=`, `>`, `>=` - Comparison
-//! 4. `+`, `-` - Addition/subtraction
-//! 5. `*`, `/`, `%`, `atan2` - Multiplication/division
-//! 6. `^` - Power (right-associative)
+//! # Binary Operators
 //!
-//! Vector matching modifiers:
+//! Operators listed from lowest to highest precedence:
+//!
+//! | Precedence | Operators                  | Description              |
+//! |------------|----------------------------|--------------------------|
+//! | 1          | `or`                       | Set union                |
+//! | 2          | `and`, `unless`            | Set intersection/diff    |
+//! | 3          | `==`, `!=`, `<`, `<=`, `>`, `>=` | Comparison         |
+//! | 4          | `+`, `-`                   | Addition/subtraction     |
+//! | 5          | `*`, `/`, `%`, `atan2`     | Multiplication/division  |
+//! | 6          | `^`                        | Power (right-associative)|
+//!
+//! # Vector Matching Modifiers
+//!
+//! Binary operations between vectors can use matching modifiers:
+//!
 //! - `on(label, ...)` - Match only on specified labels
 //! - `ignoring(label, ...)` - Match ignoring specified labels
 //! - `group_left(label, ...)` - Many-to-one matching
 //! - `group_right(label, ...)` - One-to-many matching
 //! - `bool` - Return 0/1 instead of filtering (for comparisons)
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::parser::binary::binary_op;
+//! use rusty_promql_parser::ast::BinaryOp;
+//!
+//! let (_, op) = binary_op("+").unwrap();
+//! assert_eq!(op, BinaryOp::Add);
+//!
+//! let (_, op) = binary_op("and").unwrap();
+//! assert_eq!(op, BinaryOp::And);
+//! ```
 
 use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, tag_no_case},
-    character::complete::{char, multispace0, satisfy},
+    character::complete::{char, satisfy},
     combinator::{map, not, opt, peek, value},
     multi::separated_list0,
-    sequence::{delimited, preceded},
+    sequence::delimited,
 };
 
 use crate::ast::{
@@ -147,7 +168,7 @@ fn vector_matching(input: &str) -> IResult<&str, VectorMatching> {
 ///
 /// This parses the optional modifiers that can appear between the operator
 /// and the right-hand side operand.
-pub fn binary_modifier(input: &str) -> IResult<&str, BinaryModifier> {
+pub(crate) fn binary_modifier(input: &str) -> IResult<&str, BinaryModifier> {
     let (rest, (_, return_bool, _, matching)) =
         (ws_opt, opt(bool_modifier), ws_opt, opt(vector_matching)).parse(input)?;
 
@@ -166,20 +187,6 @@ pub fn binary_modifier(input: &str) -> IResult<&str, BinaryModifier> {
             matching,
         },
     ))
-}
-
-/// Peek at the next binary operator without consuming input
-///
-/// Returns the operator and its precedence if found.
-pub fn peek_binary_op(input: &str) -> Option<(BinaryOp, u8)> {
-    peek_binary_op_parser(input)
-        .ok()
-        .map(|(_, op)| (op, op.precedence()))
-}
-
-// Helper parser with explicit return type for type inference
-fn peek_binary_op_parser(input: &str) -> IResult<&str, BinaryOp> {
-    preceded(multispace0, binary_op).parse(input)
 }
 
 #[cfg(test)]
@@ -326,26 +333,6 @@ mod tests {
     #[test]
     fn test_binary_modifier_fails_on_empty() {
         assert!(binary_modifier("foo").is_err());
-    }
-
-    // Peek tests
-    #[test]
-    fn test_peek_binary_op() {
-        assert!(peek_binary_op("+ bar").is_some());
-        assert!(peek_binary_op("  * bar").is_some());
-        assert!(peek_binary_op("foo").is_none());
-        assert!(peek_binary_op("").is_none());
-    }
-
-    #[test]
-    fn test_peek_binary_op_precedence() {
-        let (op, prec) = peek_binary_op("or foo").unwrap();
-        assert_eq!(op, BinaryOp::Or);
-        assert_eq!(prec, 1);
-
-        let (op, prec) = peek_binary_op("^ foo").unwrap();
-        assert_eq!(op, BinaryOp::Pow);
-        assert_eq!(prec, 6);
     }
 
     // Display tests

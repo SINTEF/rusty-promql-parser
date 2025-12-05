@@ -1,8 +1,30 @@
-//! Aggregation grouping clause parsing for PromQL
+//! Aggregation grouping clause parsing for PromQL.
 //!
 //! This module handles parsing the grouping clauses used with aggregation operators:
-//! - `by (label1, label2)` - Group by specific labels
-//! - `without (label1, label2)` - Group without specific labels
+//!
+//! - `by (label1, label2)` - Group by specific labels, dropping all others
+//! - `without (label1, label2)` - Drop specific labels, keeping all others
+//!
+//! # Supported Aggregation Operators
+//!
+//! These operators support grouping clauses:
+//! `sum`, `avg`, `count`, `min`, `max`, `group`, `stddev`, `stdvar`,
+//! `topk`, `bottomk`, `count_values`, `quantile`, `limitk`, `limit_ratio`
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::parser::aggregation::{grouping, GroupingAction};
+//!
+//! let (rest, g) = grouping("by (job, instance)").unwrap();
+//! assert!(rest.is_empty());
+//! assert_eq!(g.action, GroupingAction::By);
+//! assert_eq!(g.labels, vec!["job", "instance"]);
+//!
+//! let (rest, g) = grouping("without (instance)").unwrap();
+//! assert!(rest.is_empty());
+//! assert_eq!(g.action, GroupingAction::Without);
+//! ```
 
 use std::fmt;
 
@@ -13,12 +35,19 @@ use nom::{
 
 use crate::lexer::{identifier::label_name, whitespace::ws_opt};
 
-/// Grouping action for aggregation expressions
+/// The action for aggregation grouping: `by` or `without`.
+///
+/// - [`GroupingAction::By`]: Group results by the specified labels only
+/// - [`GroupingAction::Without`]: Group results by all labels except those specified
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupingAction {
-    /// Group by specific labels, dropping all others
+    /// Group by specific labels, dropping all others.
+    ///
+    /// Example: `sum by (job) (http_requests)` groups by `job` label only.
     By,
-    /// Drop specific labels, keeping all others
+    /// Drop specific labels, keeping all others.
+    ///
+    /// Example: `sum without (instance) (http_requests)` keeps all labels except `instance`.
     Without,
 }
 
@@ -31,12 +60,26 @@ impl fmt::Display for GroupingAction {
     }
 }
 
-/// Grouping clause for aggregation expressions
+/// Grouping clause for aggregation expressions.
+///
+/// Specifies how to group results when aggregating across time series.
+///
+/// # Example
+///
+/// ```rust
+/// use rusty_promql_parser::parser::aggregation::{Grouping, GroupingAction};
+///
+/// let g = Grouping {
+///     action: GroupingAction::By,
+///     labels: vec!["job".to_string(), "instance".to_string()],
+/// };
+/// assert_eq!(g.to_string(), "by (job, instance)");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grouping {
-    /// The grouping action (by or without)
+    /// The grouping action (by or without).
     pub action: GroupingAction,
-    /// The label names to group by/without
+    /// The label names to group by/without.
     pub labels: Vec<String>,
 }
 

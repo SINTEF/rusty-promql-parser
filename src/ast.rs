@@ -1,7 +1,28 @@
-//! AST type definitions for PromQL expressions
+//! Abstract Syntax Tree (AST) types for PromQL expressions.
 //!
-//! This module defines the Abstract Syntax Tree types for PromQL.
-//! The main entry point is the `Expr` enum which represents any valid PromQL expression.
+//! This module defines all the types that make up the parsed representation
+//! of a PromQL query. The main type is [`Expr`], which represents any valid
+//! PromQL expression.
+//!
+//! # Overview
+//!
+//! PromQL expressions can be:
+//! - **Literals**: Numbers ([`Expr::Number`]) and strings ([`Expr::String`])
+//! - **Selectors**: Instant vectors ([`Expr::VectorSelector`]) and range vectors ([`Expr::MatrixSelector`])
+//! - **Operations**: Binary ([`Expr::Binary`]) and unary ([`Expr::Unary`]) expressions
+//! - **Functions**: Function calls ([`Expr::Call`]) and aggregations ([`Expr::Aggregation`])
+//! - **Subqueries**: Range queries over instant vectors ([`Expr::Subquery`])
+//!
+//! # Display
+//!
+//! All AST types implement [`std::fmt::Display`] to convert back to PromQL syntax:
+//!
+//! ```rust
+//! use rusty_promql_parser::expr;
+//!
+//! let (_, ast) = expr("sum(rate(http_requests[5m]))").unwrap();
+//! println!("{}", ast); // Prints: sum(rate(http_requests[5m]))
+//! ```
 
 use std::fmt;
 

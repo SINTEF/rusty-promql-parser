@@ -1,20 +1,61 @@
-//! Vector selector parsing for PromQL
+//! Vector and matrix selector parsing for PromQL.
 //!
-//! A vector selector selects a set of time series and a single sample value
-//! for each at a given timestamp (instant).
+//! Selectors are the fundamental way to query time series data in PromQL.
 //!
-//! Syntax:
+//! # Vector Selectors (Instant Vectors)
+//!
+//! A vector selector selects a set of time series with a single sample value
+//! for each at the current timestamp.
+//!
 //! ```text
 //! metric_name
 //! metric_name{label_matchers}
 //! {label_matchers}
 //! ```
 //!
-//! Label matchers:
-//! - `=`  : equality
-//! - `!=` : inequality
-//! - `=~` : regex match
-//! - `!~` : regex not match
+//! # Matrix Selectors (Range Vectors)
+//!
+//! A matrix selector extends a vector selector with a time range, selecting
+//! multiple samples per time series.
+//!
+//! ```text
+//! metric_name[5m]
+//! metric_name{label="value"}[1h]
+//! ```
+//!
+//! # Label Matchers
+//!
+//! | Operator | Description       | Example               |
+//! |----------|-------------------|-----------------------|
+//! | `=`      | Exact equality    | `job="prometheus"`    |
+//! | `!=`     | Not equal         | `env!="prod"`         |
+//! | `=~`     | Regex match       | `path=~"/api/.*"`     |
+//! | `!~`     | Regex not match   | `status!~"5.."`       |
+//!
+//! # Modifiers
+//!
+//! Selectors can have optional modifiers:
+//!
+//! - **offset**: Shift the time range back: `metric offset 5m`
+//! - **@**: Pin to a specific timestamp: `metric @ 1609459200`
+//!
+//! # Examples
+//!
+//! ```rust
+//! use rusty_promql_parser::parser::selector::{vector_selector, matrix_selector};
+//!
+//! // Simple vector selector
+//! let (_, sel) = vector_selector("http_requests_total").unwrap();
+//! assert_eq!(sel.name, Some("http_requests_total".to_string()));
+//!
+//! // With label matchers
+//! let (_, sel) = vector_selector(r#"http_requests{job="api"}"#).unwrap();
+//! assert_eq!(sel.matchers.len(), 1);
+//!
+//! // Matrix selector with range
+//! let (_, sel) = matrix_selector("http_requests[5m]").unwrap();
+//! assert_eq!(sel.range_millis(), 5 * 60 * 1000);
+//! ```
 
 use nom::{
     IResult, Parser,
@@ -34,13 +75,19 @@ use crate::lexer::{
     whitespace::ws_opt,
 };
 
-/// @ modifier for timestamp pinning
+/// The `@` modifier for timestamp pinning.
 ///
-/// The @ modifier allows pinning a query to a specific timestamp,
+/// The `@` modifier allows pinning a query to a specific timestamp,
 /// or to the start/end of the evaluation range.
+///
+/// # Examples
+///
+/// - `metric @ 1609459200` - Pin to Unix timestamp
+/// - `metric @ start()` - Pin to evaluation start
+/// - `metric @ end()` - Pin to evaluation end
 #[derive(Debug, Clone, PartialEq)]
 pub enum AtModifier {
-    /// Pin to a specific Unix timestamp (in milliseconds)
+    /// Pin to a specific Unix timestamp (in milliseconds).
     Timestamp(i64),
     /// Pin to the start of the evaluation range: `@ start()`
     Start,
@@ -62,16 +109,18 @@ impl std::fmt::Display for AtModifier {
     }
 }
 
-/// Label matching operators
+/// Label matching operator.
+///
+/// Used in label matchers to specify how to compare label values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LabelMatchOp {
-    /// `=` - Exact string equality
+    /// `=` - Exact string equality.
     Equal,
-    /// `!=` - String inequality
+    /// `!=` - String inequality.
     NotEqual,
-    /// `=~` - Regex match
+    /// `=~` - Regex match.
     RegexMatch,
-    /// `!~` - Regex not match
+    /// `!~` - Regex not match.
     RegexNotMatch,
 }
 
@@ -103,14 +152,25 @@ impl std::fmt::Display for LabelMatchOp {
     }
 }
 
-/// A single label matcher
+/// A single label matcher.
+///
+/// Label matchers filter time series based on their label values.
+///
+/// # Example
+///
+/// ```rust
+/// use rusty_promql_parser::parser::selector::{LabelMatcher, LabelMatchOp};
+///
+/// let matcher = LabelMatcher::new("job", LabelMatchOp::Equal, "prometheus");
+/// assert_eq!(matcher.to_string(), r#"job="prometheus""#);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LabelMatcher {
-    /// Label name (e.g., "job", "__name__")
+    /// Label name (e.g., "job", "__name__").
     pub name: String,
-    /// Matching operator
+    /// Matching operator.
     pub op: LabelMatchOp,
-    /// Value to match against
+    /// Value to match against.
     pub value: String,
 }
 
@@ -158,16 +218,29 @@ impl std::fmt::Display for LabelMatcher {
     }
 }
 
-/// A vector selector expression
+/// A vector selector expression (instant vector).
+///
+/// Selects a set of time series with a single sample value for each
+/// at the query evaluation time.
+///
+/// # Example
+///
+/// ```rust
+/// use rusty_promql_parser::parser::selector::{VectorSelector, LabelMatcher, LabelMatchOp};
+///
+/// let mut sel = VectorSelector::new("http_requests_total");
+/// sel.add_matcher(LabelMatcher::new("job", LabelMatchOp::Equal, "api"));
+/// assert_eq!(sel.to_string(), r#"http_requests_total{job="api"}"#);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorSelector {
-    /// Metric name (optional if label matchers include __name__)
+    /// Metric name (optional if label matchers include `__name__`).
     pub name: Option<String>,
-    /// Label matchers
+    /// Label matchers.
     pub matchers: Vec<LabelMatcher>,
-    /// Offset modifier (e.g., `offset 5m`, `offset -1h`)
+    /// Offset modifier (e.g., `offset 5m`, `offset -1h`).
     pub offset: Option<Duration>,
-    /// @ modifier for timestamp pinning
+    /// `@` modifier for timestamp pinning.
     pub at: Option<AtModifier>,
 }
 
@@ -249,22 +322,25 @@ impl std::fmt::Display for VectorSelector {
     }
 }
 
-/// A matrix selector expression (range vector)
+/// A matrix selector expression (range vector).
 ///
-/// A matrix selector selects a range of samples over time for each matching time series.
-/// It extends a vector selector with a range duration in square brackets.
+/// Selects a range of samples over time for each matching time series.
+/// Extends a vector selector with a duration in square brackets.
 ///
-/// Syntax:
-/// ```text
-/// metric_name[5m]
-/// metric_name{label="value"}[1h]
-/// {label="value"}[30s]
+/// # Example
+///
+/// ```rust
+/// use rusty_promql_parser::parser::selector::{MatrixSelector, VectorSelector};
+/// use rusty_promql_parser::lexer::duration::Duration;
+///
+/// let sel = MatrixSelector::with_name("http_requests", Duration::from_secs(300));
+/// assert_eq!(sel.to_string(), "http_requests[5m]");
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatrixSelector {
-    /// The underlying vector selector
+    /// The underlying vector selector.
     pub selector: VectorSelector,
-    /// The range duration (e.g., 5m, 1h, 30s)
+    /// The range duration (e.g., 5m, 1h, 30s).
     pub range: Duration,
 }
 
@@ -472,9 +548,11 @@ enum Modifier {
     Offset(Duration),
 }
 
-/// Parse @ and offset modifiers in any order
+/// Parse @ and offset modifiers in any order.
 /// Returns (at_modifier, offset_modifier)
-pub fn parse_modifiers(input: &str) -> IResult<&str, (Option<AtModifier>, Option<Duration>)> {
+pub(crate) fn parse_modifiers(
+    input: &str,
+) -> IResult<&str, (Option<AtModifier>, Option<Duration>)> {
     fold_many0(
         alt((
             at_modifier.map(Modifier::At),

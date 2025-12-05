@@ -19,7 +19,7 @@ use nom::{
     IResult, Parser,
     branch::alt,
     character::complete::char,
-    combinator::opt,
+    combinator::{opt, peek},
     multi::separated_list0,
     sequence::{delimited, preceded, terminated},
 };
@@ -137,13 +137,8 @@ fn parse_postfix_expr(input: &str) -> IResult<&str, Expr> {
     let (mut rest, mut expr) = parse_primary_expr(input)?;
 
     // Try to parse subquery postfix operations
-    loop {
-        // Check if we have a subquery ahead (ws + '[' + subquery pattern)
-        let after_ws = rest.trim_start();
-        if !after_ws.starts_with('[') || !looks_like_subquery(after_ws) {
-            break;
-        }
-
+    // Use peek to check for subquery pattern without consuming input
+    while (ws_opt, peek_subquery_start).parse(rest).is_ok() {
         let (remaining, (_, ((range, step), (at, offset)))) =
             (ws_opt, (subquery_range, parse_modifiers)).parse(rest)?;
 
@@ -158,6 +153,19 @@ fn parse_postfix_expr(input: &str) -> IResult<&str, Expr> {
     }
 
     Ok((rest, expr))
+}
+
+/// Peek for subquery start pattern: `[duration:`
+/// Helper with explicit return type for type inference
+fn peek_subquery_start(input: &str) -> IResult<&str, ()> {
+    if looks_like_subquery(input) {
+        Ok((input, ()))
+    } else {
+        Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )))
+    }
 }
 
 /// Parse a primary expression (atoms)
@@ -210,11 +218,24 @@ fn parse_identifier_expr(input: &str) -> IResult<&str, Expr> {
     // Parse metric name followed by optional whitespace, then dispatch
     let (rest, (name, _)) = (metric_name, ws_opt).parse(input)?;
 
-    if rest.starts_with('(') {
+    // Use peek to check for '(' without consuming
+    if peek_open_paren(rest).is_ok() {
         parse_function_call(rest, name)
     } else {
         parse_vector_selector_with_name(rest, name)
     }
+}
+
+/// Peek for opening parenthesis
+/// Helper with explicit return type for type inference
+fn peek_open_paren(input: &str) -> IResult<&str, char> {
+    peek(char('(')).parse(input)
+}
+
+/// Peek for opening brace
+/// Helper with explicit return type for type inference
+fn peek_open_brace(input: &str) -> IResult<&str, char> {
+    peek(char('{')).parse(input)
 }
 
 /// Parse an aggregation expression
@@ -274,15 +295,15 @@ fn parse_vector_selector_with_name<'a>(input: &'a str, name: &str) -> IResult<&'
     use crate::parser::selector::{MatrixSelector, VectorSelector};
 
     // Parse optional label matchers (only if input starts with '{')
-    let (rest, matchers) = if input.starts_with('{') {
+    // Using peek to check without copying/trimming
+    let (rest, matchers) = if peek_open_brace(input).is_ok() {
         label_matchers(input)?
     } else {
         (input, Vec::new())
     };
 
-    // After whitespace, check if this is a matrix selector
-    let after_ws = rest.trim_start();
-    if after_ws.starts_with('[') && !looks_like_subquery(after_ws) {
+    // Check if this is a matrix selector: ws + '[' but NOT subquery pattern
+    if (ws_opt, peek_matrix_bracket).parse(rest).is_ok() {
         // Matrix selector: ws [duration] modifiers
         return (ws_opt, char('['), duration, char(']'), parse_modifiers)
             .map(|(_, _, range, _, (at, offset))| {
@@ -311,6 +332,20 @@ fn parse_vector_selector_with_name<'a>(input: &'a str, name: &str) -> IResult<&'
         .parse(rest)
 }
 
+/// Peek for matrix bracket: `[` but NOT subquery pattern `[duration:`
+/// Helper with explicit return type for type inference
+fn peek_matrix_bracket(input: &str) -> IResult<&str, char> {
+    let (rest, c) = peek(char('[')).parse(input)?;
+    // Make sure it's NOT a subquery
+    if looks_like_subquery(input) {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+    Ok((rest, c))
+}
+
 /// Parse a vector selector starting with just labels (no metric name)
 fn parse_labels_only_selector(input: &str) -> IResult<&str, Expr> {
     use crate::parser::selector::{LabelMatchOp, MatrixSelector, VectorSelector};
@@ -333,9 +368,8 @@ fn parse_labels_only_selector(input: &str) -> IResult<&str, Expr> {
         matchers
     };
 
-    // After whitespace, check if this is a matrix selector
-    let after_ws = rest.trim_start();
-    if after_ws.starts_with('[') && !looks_like_subquery(after_ws) {
+    // Check if this is a matrix selector: ws + '[' but NOT subquery pattern
+    if (ws_opt, peek_matrix_bracket).parse(rest).is_ok() {
         return (ws_opt, char('['), duration, char(']'), parse_modifiers)
             .map(|(_, _, range, _, (at, offset))| {
                 let selector = VectorSelector {

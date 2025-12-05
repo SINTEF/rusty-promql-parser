@@ -13,7 +13,13 @@
 //! - `-rate(some_metric[5m])`
 //! - `--some_metric` (double negation)
 
-use nom::{IResult, Parser, branch::alt, character::complete::char, combinator::value};
+use nom::{
+    IResult, Parser,
+    branch::alt,
+    character::complete::{char, multispace0},
+    combinator::{peek, value},
+    sequence::preceded,
+};
 
 use crate::ast::UnaryOp;
 
@@ -39,12 +45,17 @@ pub fn unary_op(input: &str) -> IResult<&str, UnaryOp> {
     .parse(input)
 }
 
-/// Check if the input starts with a unary operator
+/// Check if the input starts with a unary operator (after optional whitespace)
 ///
 /// This is useful for lookahead in the expression parser.
+/// Uses nom's `peek` to avoid copying/modifying the input string.
 pub fn starts_with_unary(input: &str) -> bool {
-    let trimmed = input.trim_start();
-    trimmed.starts_with('-') || trimmed.starts_with('+')
+    starts_with_unary_parser(input).is_ok()
+}
+
+// Helper parser with explicit return type for type inference
+fn starts_with_unary_parser(input: &str) -> IResult<&str, char> {
+    preceded(multispace0, peek(alt((char('-'), char('+'))))).parse(input)
 }
 
 #[cfg(test)]

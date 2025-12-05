@@ -21,10 +21,10 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, tag_no_case},
-    character::complete::{char, satisfy},
+    character::complete::{char, multispace0, satisfy},
     combinator::{map, not, opt, peek, value},
     multi::separated_list0,
-    sequence::delimited,
+    sequence::{delimited, preceded},
 };
 
 use crate::ast::{
@@ -172,14 +172,14 @@ pub fn binary_modifier(input: &str) -> IResult<&str, BinaryModifier> {
 ///
 /// Returns the operator and its precedence if found.
 pub fn peek_binary_op(input: &str) -> Option<(BinaryOp, u8)> {
-    // Skip leading whitespace
-    let trimmed = input.trim_start();
+    peek_binary_op_parser(input)
+        .ok()
+        .map(|(_, op)| (op, op.precedence()))
+}
 
-    if let Ok((_, op)) = binary_op(trimmed) {
-        Some((op, op.precedence()))
-    } else {
-        None
-    }
+// Helper parser with explicit return type for type inference
+fn peek_binary_op_parser(input: &str) -> IResult<&str, BinaryOp> {
+    preceded(multispace0, binary_op).parse(input)
 }
 
 #[cfg(test)]

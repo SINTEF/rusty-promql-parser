@@ -18,7 +18,8 @@
 use nom::{
     IResult, Parser,
     character::complete::char,
-    combinator::{opt, peek, recognize},
+    combinator::{map, opt, peek, recognize},
+    sequence::delimited,
 };
 
 use crate::ast::{Expr, SubqueryExpr};
@@ -45,13 +46,14 @@ use crate::parser::selector::parse_modifiers;
 /// assert!(step.is_none());
 /// ```
 pub fn subquery_range(input: &str) -> IResult<&str, (Duration, Option<Duration>)> {
-    let (rest, _) = char('[')(input)?;
-    let (rest, range) = duration(rest)?;
-    let (rest, _) = char(':')(rest)?;
-    let (rest, step) = opt(duration).parse(rest)?;
-    let (rest, _) = char(']')(rest)?;
-
-    Ok((rest, (range, step)))
+    delimited(
+        char('['),
+        map((duration, char(':'), opt(duration)), |(range, _, step)| {
+            (range, step)
+        }),
+        char(']'),
+    )
+    .parse(input)
 }
 
 /// Try to parse a subquery suffix on an expression
@@ -62,19 +64,17 @@ pub fn subquery_range(input: &str) -> IResult<&str, (Duration, Option<Duration>)
 /// Note: This only parses the subquery part, not the inner expression.
 /// The caller is responsible for providing the already-parsed inner expression.
 pub fn try_parse_subquery(input: &str, expr: Expr) -> IResult<&str, SubqueryExpr> {
-    let (rest, (range, step)) = subquery_range(input)?;
-    let (rest, (at, offset)) = parse_modifiers(rest)?;
-
-    Ok((
-        rest,
-        SubqueryExpr {
-            expr,
+    map(
+        (subquery_range, parse_modifiers),
+        move |((range, step), (at, offset))| SubqueryExpr {
+            expr: expr.clone(),
             range,
             step,
             offset,
             at,
         },
-    ))
+    )
+    .parse(input)
 }
 
 /// Check if the input looks like a subquery bracket `[duration:`
@@ -85,10 +85,10 @@ pub fn try_parse_subquery(input: &str, expr: Expr) -> IResult<&str, SubqueryExpr
 ///
 /// The key difference is the presence of `:` after the first duration.
 pub fn looks_like_subquery(input: &str) -> bool {
-    // Use peek to check if we can parse the subquery pattern without consuming input
     // Pattern: '[' duration ':'
-    let recognizer = recognize((char('['), duration, char(':'))).map(|_: &str| ());
-    peek(recognizer).parse(input).is_ok()
+    peek(recognize((char('['), duration, char(':'))))
+        .parse(input)
+        .is_ok()
 }
 
 #[cfg(test)]

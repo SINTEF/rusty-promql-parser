@@ -455,14 +455,15 @@ pub fn at_modifier(input: &str) -> IResult<&str, AtModifier> {
 /// assert_eq!(sel.matchers().len(), 1);
 /// ```
 pub fn matrix_selector(input: &str) -> IResult<&str, MatrixSelector> {
-    let (rest, mut selector) = base_vector_selector(input)?;
-    let (rest, range) = range_duration(rest)?;
-    // Parse @ and offset modifiers (in any order)
-    let (rest, (at, offset)) = parse_modifiers(rest)?;
-    selector.at = at;
-    selector.offset = offset;
-
-    Ok((rest, MatrixSelector::new(selector, range)))
+    map(
+        (base_vector_selector, range_duration, parse_modifiers),
+        |(mut selector, range, (at, offset))| {
+            selector.at = at;
+            selector.offset = offset;
+            MatrixSelector::new(selector, range)
+        },
+    )
+    .parse(input)
 }
 
 /// Modifier type for fold_many0
@@ -503,25 +504,26 @@ fn label_match_op(input: &str) -> IResult<&str, LabelMatchOp> {
 
 /// Parse a single label matcher: `label_name op "value"`
 fn label_matcher(input: &str) -> IResult<&str, LabelMatcher> {
-    let (input, _) = ws_opt(input)?;
-    let (input, name) = label_name(input)?;
-    let (input, _) = ws_opt(input)?;
-    let (input, op) = label_match_op(input)?;
-    let (input, _) = ws_opt(input)?;
-    let (input, value) = string_literal(input)?;
-
-    Ok((input, LabelMatcher::new(name.to_string(), op, value)))
+    map(
+        (
+            ws_opt,
+            label_name,
+            ws_opt,
+            label_match_op,
+            ws_opt,
+            string_literal,
+        ),
+        |(_, name, _, op, _, value)| LabelMatcher::new(name.to_string(), op, value),
+    )
+    .parse(input)
 }
 
 /// Parse a quoted metric name as a matcher: `"metric_name"` inside braces
 fn quoted_metric_matcher(input: &str) -> IResult<&str, LabelMatcher> {
-    let (input, _) = ws_opt(input)?;
-    let (input, name) = string_literal(input)?;
-
-    Ok((
-        input,
-        LabelMatcher::new("__name__", LabelMatchOp::Equal, name),
-    ))
+    map((ws_opt, string_literal), |(_, name)| {
+        LabelMatcher::new("__name__", LabelMatchOp::Equal, name)
+    })
+    .parse(input)
 }
 
 /// Parse a matcher item (either a label matcher or quoted metric name)
@@ -563,12 +565,15 @@ pub fn label_matchers(input: &str) -> IResult<&str, Vec<LabelMatcher>> {
 /// assert_eq!(sel.matchers.len(), 1);
 /// ```
 pub fn vector_selector(input: &str) -> IResult<&str, VectorSelector> {
-    let (rest, mut selector) = base_vector_selector(input)?;
-    // Parse @ and offset modifiers (in any order)
-    let (rest, (at, offset)) = parse_modifiers(rest)?;
-    selector.at = at;
-    selector.offset = offset;
-    Ok((rest, selector))
+    map(
+        (base_vector_selector, parse_modifiers),
+        |(mut selector, (at, offset))| {
+            selector.at = at;
+            selector.offset = offset;
+            selector
+        },
+    )
+    .parse(input)
 }
 
 /// Parse a vector selector without offset modifier.

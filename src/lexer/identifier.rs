@@ -150,13 +150,15 @@ pub fn metric_name(input: &str) -> IResult<&str, &str> {
 /// assert_eq!(id, Identifier::Metric("foo:bar".to_string()));
 /// ```
 pub fn identifier(input: &str) -> IResult<&str, Identifier> {
-    let (rest, name) = metric_name(input)?;
-    let ident = if name.contains(':') {
-        Identifier::Metric(name.to_string())
-    } else {
-        Identifier::Plain(name.to_string())
-    };
-    Ok((rest, ident))
+    metric_name
+        .map(|name| {
+            if name.contains(':') {
+                Identifier::Metric(name.to_string())
+            } else {
+                Identifier::Plain(name.to_string())
+            }
+        })
+        .parse(input)
 }
 
 /// PromQL keywords

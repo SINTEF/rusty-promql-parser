@@ -62,8 +62,8 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::char,
-    combinator::{map, opt},
-    multi::separated_list0,
+    combinator::{map, opt, success},
+    multi::separated_list1,
     sequence::{delimited, terminated},
 };
 
@@ -626,10 +626,13 @@ fn matcher_item(input: &str) -> IResult<&str, LabelMatcher> {
 pub fn label_matchers(input: &str) -> IResult<&str, Vec<LabelMatcher>> {
     delimited(
         (char('{'), ws_opt),
-        terminated(
-            separated_list0(delimited(ws_opt, char(','), ws_opt), matcher_item),
-            opt((ws_opt, char(','))), // Allow trailing comma
-        ),
+        alt((
+            terminated(
+                separated_list1(delimited(ws_opt, char(','), ws_opt), matcher_item),
+                opt((ws_opt, char(','))),
+            ),
+            success(Vec::new()),
+        )),
         (ws_opt, char('}')),
     )
     .parse(input)

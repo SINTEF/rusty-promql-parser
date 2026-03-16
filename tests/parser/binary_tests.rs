@@ -277,6 +277,38 @@ mod tests {
     use super::*;
     use rusty_promql_parser::{Expr, expr};
 
+    fn strip_parens(expr: Expr) -> Expr {
+        match expr {
+            Expr::Paren(inner) => strip_parens(*inner),
+            Expr::Aggregation(aggregation) => {
+                Expr::Aggregation(Box::new(rusty_promql_parser::Aggregation {
+                    expr: strip_parens(aggregation.expr),
+                    ..*aggregation
+                }))
+            }
+            Expr::Binary(binary) => Expr::Binary(Box::new(rusty_promql_parser::BinaryExpr {
+                lhs: strip_parens(binary.lhs),
+                rhs: strip_parens(binary.rhs),
+                ..*binary
+            })),
+            Expr::Unary(unary) => Expr::Unary(Box::new(rusty_promql_parser::UnaryExpr {
+                expr: strip_parens(unary.expr),
+                ..*unary
+            })),
+            Expr::Call(mut call) => {
+                call.args = call.args.into_iter().map(strip_parens).collect();
+                Expr::Call(call)
+            }
+            Expr::Subquery(subquery) => {
+                Expr::Subquery(Box::new(rusty_promql_parser::SubqueryExpr {
+                    expr: strip_parens(subquery.expr),
+                    ..*subquery
+                }))
+            }
+            other => other,
+        }
+    }
+
     fn assert_expr_fails(input: &str) {
         match expr(input) {
             Err(_) => {}
@@ -349,10 +381,23 @@ mod tests {
                 input,
                 remaining
             );
+            let (expected_remaining, expected_parsed) =
+                expr(expected_structure).unwrap_or_else(|error| {
+                    panic!(
+                        "Failed to parse expected precedence structure '{}': {:?}",
+                        expected_structure, error
+                    )
+                });
+            assert!(
+                expected_remaining.is_empty(),
+                "Unexpected remaining input for expected structure '{}': '{}'",
+                expected_structure,
+                expected_remaining
+            );
             assert_eq!(
-                parsed.to_string(),
-                *expected_structure,
-                "Unexpected precedence rendering for '{}'",
+                strip_parens(parsed),
+                strip_parens(expected_parsed),
+                "Unexpected precedence AST for '{}'",
                 input
             );
         }

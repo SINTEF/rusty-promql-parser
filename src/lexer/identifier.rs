@@ -104,6 +104,15 @@ pub fn label_name(input: &str) -> IResult<&str, &str> {
     .parse(input)
 }
 
+/// Parse a label name that appears in a keyword position.
+///
+/// Grouping clauses and vector matching label lists reserve PromQL keywords,
+/// so names like `on` or `group_left` must be rejected there even though they
+/// remain valid label names in selectors.
+pub(crate) fn clause_label_name(input: &str) -> IResult<&str, &str> {
+    verify(label_name, |name: &&str| lookup_keyword(name).is_none()).parse(input)
+}
+
 /// Parse a metric name: `[a-zA-Z_:][a-zA-Z0-9_:]*`
 ///
 /// Metric names can contain colons (for recording rules).

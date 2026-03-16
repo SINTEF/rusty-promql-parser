@@ -157,6 +157,7 @@ pub const INVALID_AT_MODIFIER: &[(&str, &str)] = &[
     ("foo @ +Inf", "timestamp out of bounds"),
     ("foo @ -Inf", "timestamp out of bounds"),
     ("foo @ NaN", "timestamp out of bounds"),
+    ("foo @ 1 @ 2", "@ may not be set multiple times"),
     ("1 offset 1d", "offset modifier must be preceded"),
     (
         "foo offset 1s offset 2s",
@@ -169,6 +170,19 @@ mod tests {
     use super::*;
     use rusty_promql_parser::parser::selector::{LabelMatchOp, vector_selector};
 
+    fn assert_selector_fails(input: &str) {
+        match vector_selector(input) {
+            Err(_) => {}
+            Ok((remaining, _)) => {
+                assert!(
+                    !remaining.trim().is_empty(),
+                    "Expected '{}' to fail or leave trailing input",
+                    input
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_valid_selectors() {
         for input in VALID_VECTOR_SELECTORS {
@@ -178,12 +192,46 @@ mod tests {
 
     #[test]
     fn test_invalid_selectors() {
+        let parser_enforced = [
+            "{0a='a'}",
+            "some_metric{a=b}",
+            r#"some_metric{a:b="b"}"#,
+            r#"foo{a*"b"}"#,
+            r#"foo{a>="b"}"#,
+            "foo{gibberish}",
+            "foo{1}",
+            "{",
+            "some{",
+            "}",
+            "some}",
+            "foo{,}",
+            r#"foo{__name__ == "bar"}"#,
+            r#"foo{__name__="bar" lol}"#,
+            r#"foo{"a"=}"#,
+            r#"foo{__name__= =}"#,
+        ];
+
+        for (input, _) in INVALID_VECTOR_SELECTORS
+            .iter()
+            .copied()
+            .filter(|(input, _)| parser_enforced.contains(input))
+        {
+            assert_selector_fails(input);
+        }
+
         for (input, error_desc) in INVALID_VECTOR_SELECTORS {
             assert!(
                 !error_desc.is_empty(),
                 "Empty error description for '{}'",
                 input
             );
+        }
+    }
+
+    #[test]
+    fn test_invalid_at_modifiers() {
+        for (input, _error_desc) in INVALID_AT_MODIFIER {
+            assert_selector_fails(input);
         }
     }
 

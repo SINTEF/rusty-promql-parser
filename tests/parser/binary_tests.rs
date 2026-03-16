@@ -277,29 +277,82 @@ mod tests {
     use super::*;
     use rusty_promql_parser::{Expr, expr};
 
+    fn assert_expr_fails(input: &str) {
+        match expr(input) {
+            Err(_) => {}
+            Ok((remaining, _)) => {
+                assert!(
+                    !remaining.trim().is_empty(),
+                    "Expected '{}' to fail or leave trailing input",
+                    input
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_arithmetic_ops() {
         for (input, expected_op) in ARITHMETIC_OPERATORS {
-            assert!(!input.is_empty(), "Empty input in ARITHMETIC_OPERATORS");
-            assert!(!expected_op.is_empty(), "Empty operator for '{}'", input);
+            let (remaining, parsed) = expr(input).unwrap_or_else(|error| {
+                panic!(
+                    "Failed to parse arithmetic expression '{}': {:?}",
+                    input, error
+                )
+            });
+            assert!(
+                remaining.is_empty(),
+                "Unexpected remaining input for '{}': '{}'",
+                input,
+                remaining
+            );
+            match parsed {
+                Expr::Binary(binary) => assert_eq!(binary.op.as_str(), *expected_op),
+                other => panic!(
+                    "Expected binary expression for '{}', got {:?}",
+                    input, other
+                ),
+            }
         }
     }
 
     #[test]
     fn test_comparison_ops() {
         for (input, expected_op, _has_bool) in COMPARISON_OPERATORS {
-            assert!(!input.is_empty(), "Empty input in COMPARISON_OPERATORS");
-            assert!(!expected_op.is_empty(), "Empty operator for '{}'", input);
+            let (remaining, parsed) = expr(input).unwrap_or_else(|error| {
+                panic!("Failed to parse comparison '{}': {:?}", input, error)
+            });
+            assert!(
+                remaining.is_empty(),
+                "Unexpected remaining input for '{}': '{}'",
+                input,
+                remaining
+            );
+            match parsed {
+                Expr::Binary(binary) => assert_eq!(binary.op.as_str(), *expected_op),
+                other => panic!(
+                    "Expected binary expression for '{}', got {:?}",
+                    input, other
+                ),
+            }
         }
     }
 
     #[test]
     fn test_precedence_tests() {
         for (input, expected_structure) in PRECEDENCE_TESTS {
-            assert!(!input.is_empty(), "Empty input in PRECEDENCE_TESTS");
+            let (remaining, parsed) = expr(input).unwrap_or_else(|error| {
+                panic!("Failed to parse precedence case '{}': {:?}", input, error)
+            });
             assert!(
-                !expected_structure.is_empty(),
-                "Empty expected structure for '{}'",
+                remaining.is_empty(),
+                "Unexpected remaining input for '{}': '{}'",
+                input,
+                remaining
+            );
+            assert_eq!(
+                parsed.to_string(),
+                *expected_structure,
+                "Unexpected precedence rendering for '{}'",
                 input
             );
         }
@@ -324,6 +377,36 @@ mod tests {
                 "Empty error description for '{}'",
                 input
             );
+            assert_expr_fails(input);
+        }
+    }
+
+    #[test]
+    fn test_reserved_keywords_rejected_in_vector_matching_labels() {
+        for input in ["foo + on(on) bar", "foo + ignoring(group_left) bar"] {
+            assert_expr_fails(input);
+        }
+    }
+
+    #[test]
+    fn test_invalid_binary_cases_fail() {
+        let parser_enforced = [
+            "1 !~ 1",
+            "1 =~ 1",
+            "1+",
+            "1 /",
+            "*1",
+            "*test",
+            "foo + group_left(baz) bar",
+            "a - on(b) ignoring(c) d",
+        ];
+
+        for (input, _) in INVALID_BINARY_OPS
+            .iter()
+            .copied()
+            .filter(|(input, _)| parser_enforced.contains(input))
+        {
+            assert_expr_fails(input);
         }
     }
 

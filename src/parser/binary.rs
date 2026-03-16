@@ -51,7 +51,7 @@ use nom::{
 use crate::ast::{
     BinaryModifier, BinaryOp, GroupModifier, GroupSide, VectorMatching, VectorMatchingOp,
 };
-use crate::lexer::{identifier::label_name, whitespace::ws_opt};
+use crate::lexer::{identifier::clause_label_name, whitespace::ws_opt};
 
 /// Parser that succeeds only at a word boundary (not followed by alphanumeric or underscore)
 fn word_boundary(input: &str) -> IResult<&str, ()> {
@@ -126,7 +126,7 @@ fn label_list(input: &str) -> IResult<&str, Vec<String>> {
         (char('('), ws_opt),
         separated_list0(
             delimited(ws_opt, char(','), ws_opt),
-            map(label_name, |s| s.to_string()),
+            map(clause_label_name, |s| s.to_string()),
         ),
         (ws_opt, char(')')),
     )

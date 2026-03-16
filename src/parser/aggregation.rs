@@ -33,7 +33,7 @@ use nom::{
     multi::separated_list0, sequence::delimited,
 };
 
-use crate::lexer::{identifier::label_name, whitespace::ws_opt};
+use crate::lexer::{identifier::clause_label_name, whitespace::ws_opt};
 
 /// The action for aggregation grouping: `by` or `without`.
 ///
@@ -122,7 +122,10 @@ pub fn grouping(input: &str) -> IResult<&str, Grouping> {
         // Parse: ws "(" ws labels ws ")"
         delimited(
             (ws_opt, char('('), ws_opt),
-            separated_list0((ws_opt, char(','), ws_opt), label_name.map(String::from)),
+            separated_list0(
+                (ws_opt, char(','), ws_opt),
+                clause_label_name.map(String::from),
+            ),
             (ws_opt, char(')')),
         ),
     )

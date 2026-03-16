@@ -63,7 +63,7 @@ use nom::{
     bytes::complete::tag,
     character::complete::char,
     combinator::{map, opt},
-    multi::{fold_many0, separated_list0},
+    multi::separated_list0,
     sequence::{delimited, terminated},
 };
 
@@ -542,31 +542,44 @@ pub fn matrix_selector(input: &str) -> IResult<&str, MatrixSelector> {
     .parse(input)
 }
 
-/// Modifier type for fold_many0
-enum Modifier {
-    At(AtModifier),
-    Offset(Duration),
-}
-
 /// Parse @ and offset modifiers in any order.
 /// Returns (at_modifier, offset_modifier)
 pub(crate) fn parse_modifiers(
     input: &str,
 ) -> IResult<&str, (Option<AtModifier>, Option<Duration>)> {
-    fold_many0(
-        alt((
-            at_modifier.map(Modifier::At),
-            offset_modifier.map(Modifier::Offset),
-        )),
-        || (None, None),
-        |(at, offset), modifier| match modifier {
-            Modifier::At(a) if at.is_none() => (Some(a), offset),
-            Modifier::Offset(o) if offset.is_none() => (at, Some(o)),
-            // Ignore duplicates
-            _ => (at, offset),
-        },
-    )
-    .parse(input)
+    let mut rest = input;
+    let mut at = None;
+    let mut offset = None;
+
+    loop {
+        if let Ok((next, parsed_at)) = at_modifier(rest) {
+            if at.is_some() {
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    rest,
+                    nom::error::ErrorKind::Verify,
+                )));
+            }
+            at = Some(parsed_at);
+            rest = next;
+            continue;
+        }
+
+        if let Ok((next, parsed_offset)) = offset_modifier(rest) {
+            if offset.is_some() {
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    rest,
+                    nom::error::ErrorKind::Verify,
+                )));
+            }
+            offset = Some(parsed_offset);
+            rest = next;
+            continue;
+        }
+
+        break;
+    }
+
+    Ok((rest, (at, offset)))
 }
 
 /// Parse a label match operator

@@ -382,20 +382,34 @@ mod tests {
 
     #[test]
     fn test_invalid_aggregations_fail() {
-        for (input, _error_desc) in INVALID_AGGREGATIONS {
+        let parser_enforced = [
+            "sum some_metric",
+            "sum()",
+            "sum by (job) ()",
+            "topk(5)",
+            "sum by job (some_metric)",
+            "sum without job (some_metric)",
+            "sum by (job) without (instance) (some_metric)",
+            "sum by (job instance) (some_metric)",
+            "sum by (job,) (some_metric)",
+            "sum by (on) (some_metric)",
+            "sum by (group_left) (some_metric)",
+        ];
+
+        for (input, _) in INVALID_AGGREGATIONS
+            .iter()
+            .copied()
+            .filter(|(input, _)| parser_enforced.contains(input))
+        {
             let result = expr(input);
-            // Should either fail or not fully consume input
             match result {
-                Err(_) => {
-                    // Good - it should fail
-                }
+                Err(_) => {}
                 Ok((remaining, _)) => {
-                    // Some invalid inputs might partially parse
-                    // That's acceptable as long as they don't fully parse
-                    if remaining.is_empty() {
-                        // Check if it's a known case where parsing succeeds but semantic validation would fail
-                        // (Some "invalid" cases are actually syntactically valid but semantically wrong)
-                    }
+                    assert!(
+                        !remaining.trim().is_empty(),
+                        "Expected invalid aggregation to fail or leave trailing input: '{}'",
+                        input
+                    );
                 }
             }
         }
